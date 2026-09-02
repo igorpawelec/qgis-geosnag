@@ -42,18 +42,46 @@ class PolygonPostProcessor(QgsProcessingLayerPostProcessorInterface):
                 feedback.pushInfo(f"Could not style the polygons: {e}")
 
 
-class StretchedRasterPostProcessor(QgsProcessingLayerPostProcessorInterface):
+class ProbabilityPostProcessor(QgsProcessingLayerPostProcessorInterface):
+    """Fixed 0-1 pseudocolour for the probability raster. No statistics.
+
+    The first version stretched the raster with a cumulative cut, which
+    scans every pixel -- on the GUI thread, inside the task-completion
+    handler. On a full orthophoto (130 M pixels) that pass let Qt re-enter
+    the event loop while the finished task was being torn down: an access
+    violation in on_complete, not a catchable error. The probability is
+    known to lie in 0-1 (nodata -1), so the ramp is set explicitly and
+    nothing is read here.
+    """
+
     def postProcessLayer(self, layer, context, feedback=None):
         if not _usable(layer):
             return
         try:
-            from qgis.core import QgsContrastEnhancement, QgsRasterMinMaxOrigin
-            layer.setContrastEnhancement(QgsContrastEnhancement.StretchToMinimumMaximum,
-                                         QgsRasterMinMaxOrigin.CumulativeCut)
+            from qgis.core import QgsColorRampShader, QgsRasterShader, QgsSingleBandPseudoColorRenderer
+            from qgis.PyQt.QtGui import QColor
+            ramp = QgsColorRampShader(0.0, 1.0)
+            ramp.setColorRampType(QgsColorRampShader.Interpolated)
+            ramp.setColorRampItemList([
+                QgsColorRampShader.ColorRampItem(0.0, QColor(0, 0, 0, 0), "0"),
+                QgsColorRampShader.ColorRampItem(0.3, QColor(255, 255, 150, 90), "0.3"),
+                QgsColorRampShader.ColorRampItem(0.5, QColor(255, 200, 0, 170), "0.5"),
+                QgsColorRampShader.ColorRampItem(0.7, QColor(255, 120, 0, 210), "0.7"),
+                QgsColorRampShader.ColorRampItem(1.0, QColor(220, 0, 0, 240), "1"),
+            ])
+            shader = QgsRasterShader()
+            shader.setRasterShaderFunction(ramp)
+            renderer = QgsSingleBandPseudoColorRenderer(layer.dataProvider(), 1, shader)
+            renderer.setClassificationMin(0.0)
+            renderer.setClassificationMax(1.0)
+            layer.setRenderer(renderer)
             layer.triggerRepaint()
         except Exception as e:
             if feedback is not None:
-                feedback.pushInfo(f"Could not stretch the raster: {e}")
+                feedback.pushInfo(f"Could not style the probability raster: {e}")
+
+
+StretchedRasterPostProcessor = ProbabilityPostProcessor
 
 
 def _register(context, dest_id, processor):
