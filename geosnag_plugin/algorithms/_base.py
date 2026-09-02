@@ -54,12 +54,46 @@ def require_packages(feedback):
             + ".\nInstall them into QGIS's own Python and restart QGIS:\n  " + manual_hint())
 
 
+SETTINGS_KEY = "geosnag/assets_dir"
+
+
 def set_assets_dir(path, feedback=None):
-    """Point pygeosnag at a local model directory instead of the download cache."""
+    """Point pygeosnag at a local model directory instead of the download cache.
+
+    A folder given once is remembered in the QGIS settings, so the parameter
+    can stay empty on later runs. Order: the parameter, then the remembered
+    folder, then whatever PYGEOSNAG_ASSETS already says, then the download
+    cache (which needs the GitHub release to exist).
+    """
+    try:
+        from qgis.core import QgsSettings
+        settings = QgsSettings()
+    except Exception:
+        settings = None
+    if path:
+        if settings is not None:
+            settings.setValue(SETTINGS_KEY, path)
+    elif settings is not None:
+        saved = settings.value(SETTINGS_KEY, "", type=str)
+        if saved and os.path.isdir(saved):
+            path = saved
     if path:
         os.environ["PYGEOSNAG_ASSETS"] = path
         if feedback is not None:
             feedback.pushInfo(f"Models from {path}")
+    elif feedback is not None:
+        feedback.pushInfo("Models from the download cache (the pygeosnag GitHub release); "
+                          "give a local models folder under Advanced if that fails.")
+    return path
+
+
+def package_error(e):
+    """A pygeosnag RuntimeError as a readable Processing error."""
+    msg = str(e)
+    if "could not download" in msg:
+        msg += ("\n\nIn QGIS: open Advanced and set 'Local models folder' to the folder that holds "
+                "manifest.json and the segments_*.joblib files. It is remembered for later runs.")
+    return QgsProcessingException(msg)
 
 
 def progress_adapter(feedback):

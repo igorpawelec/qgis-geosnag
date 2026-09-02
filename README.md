@@ -19,7 +19,7 @@ A Processing provider for the [pygeosnag](https://github.com/igorpawelec/pygeosn
 
 ## Use
 
-Processing toolbox → GeoSnag → *Detect dead trees*. Pick the orthophoto; leave the mode on *auto* for R, G, B, NIR or R, G, B in that order, choose *cir* for NIR, R, G, or give the band roles in raster order. Keep the threshold at 0.5 unless you know why. Add stand polygons with a stand age field if you have them: on seven test sites they removed a quarter of the objects and, in a field review, only roads and fields.
+Processing toolbox → GeoSnag → *Detect dead trees*. Five things on the dialog: the orthophoto, the band mode (*auto* for R, G, B, NIR or R, G, B in that order; *cir* for NIR, R, G), the threshold (keep 0.5 unless you know why), optional stand polygons with a stand age field (on seven test sites they removed a quarter of the objects and, in a field review, only roads and fields), and the output. Everything else is under *Advanced* with the calibrated defaults, including the local models folder: give it once and it is remembered.
 
 If the result is poor on a new kind of scene (different camera, species or decay stage), mark a few dead trees as points, optionally a few objects you reject, and run *Adapt model*; give its output to *Detect dead trees* as the adapted model.
 

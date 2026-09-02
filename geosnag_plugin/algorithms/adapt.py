@@ -1,4 +1,9 @@
-"""Adapt model -- wraps pygeosnag.adapt."""
+"""Adapt model -- wraps pygeosnag.adapt.
+
+On the dialog: the raster windows, the dead-tree points, optionally the
+rejected objects, and the output model. Mode, band roles, weight and the
+models folder sit under Advanced.
+"""
 from qgis.core import (
     QgsProcessing,
     QgsProcessingAlgorithm,
@@ -11,19 +16,20 @@ from qgis.core import (
     QgsProcessingParameterString,
 )
 
-from ._base import (MODE_KEYS, MODES, advanced, require_packages, set_assets_dir,
-                    source_path, warm_jit)
+from ._base import (MODE_KEYS, MODES, advanced, package_error, require_packages,
+                    set_assets_dir, source_path, warm_jit)
 
 
 class AdaptModelAlgorithm(QgsProcessingAlgorithm):
     RASTERS = "RASTERS"
     POSITIVES = "POSITIVES"
     NEGATIVES = "NEGATIVES"
+    OUTPUT = "OUTPUT"
+    # advanced
     MODE = "MODE"
     BANDS = "BANDS"
     WEIGHT = "WEIGHT"
     ASSETS = "ASSETS"
-    OUTPUT = "OUTPUT"
 
     def name(self):
         return "adapt"
@@ -45,17 +51,17 @@ class AdaptModelAlgorithm(QgsProcessingAlgorithm):
             "<p>Teach the detector a scene it gets wrong. A forest trained on pine sites "
             "misses what it never saw: on a mountain spruce plot the bleached white snags "
             "scored 0.23 and stayed below the threshold. One labelled window of 53 snags "
-            "took it from 6 to 49 of them.</p>"
+            "took it from 6 to 49 of them, and lifted a neighbouring plot from 13 to 21 of "
+            "36 without any label of its own.</p>"
             "<p><b>Inputs.</b> One or more raster windows (a few thousand pixels a side at "
             "most), one point layer of dead trees per raster in the same order, and "
-            "optionally one point layer per raster of objects you rejected (hard negatives). "
-            "Every raster must be in the same band mode.</p>"
-            "<p><b>Weight.</b> Sample weight of the new rows against the ~2 million rows of "
-            "the training table; 1 treats them like any other, 5 makes one small window "
-            "count.</p>"
+            "optionally one point layer per raster of objects you rejected. Every raster "
+            "must be in the same band mode.</p>"
+            "<p><b>Weight</b> (Advanced): 5 by default, so one small window counts against "
+            "the ~2 million rows of the training table.</p>"
             "<p>The result is a .joblib forest to give <i>Detect dead trees</i> as the "
-            "adapted model. The training table of the mode is downloaded on first use "
-            "(about 130&ndash;150 MB).</p>")
+            "adapted model. The training table of the mode (130&ndash;150 MB) comes from the "
+            "models folder or the download cache.</p>")
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterMultipleLayers(
@@ -65,14 +71,14 @@ class AdaptModelAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterMultipleLayers(
             self.NEGATIVES, "Rejected objects (points), one layer per raster (optional)",
             QgsProcessing.TypeVectorPoint, optional=True))
-        self.addParameter(QgsProcessingParameterEnum(self.MODE, "Band mode", options=MODES, defaultValue=0))
-        self.addParameter(QgsProcessingParameterString(
-            self.BANDS, "Band roles in raster order (empty = default order)", defaultValue="", optional=True))
-        self.addParameter(QgsProcessingParameterNumber(
+        self.addParameter(advanced(QgsProcessingParameterEnum(self.MODE, "Band mode", options=MODES, defaultValue=0)))
+        self.addParameter(advanced(QgsProcessingParameterString(
+            self.BANDS, "Band roles in raster order (empty = default order)", defaultValue="", optional=True)))
+        self.addParameter(advanced(QgsProcessingParameterNumber(
             self.WEIGHT, "Weight of the new rows", QgsProcessingParameterNumber.Double,
-            defaultValue=5.0, minValue=0.1))
+            defaultValue=5.0, minValue=0.1)))
         self.addParameter(advanced(QgsProcessingParameterFile(
-            self.ASSETS, "Local models folder (instead of the download cache)",
+            self.ASSETS, "Local models folder (remembered; empty = last used or download)",
             behavior=QgsProcessingParameterFile.Folder, optional=True)))
         self.addParameter(QgsProcessingParameterFileDestination(
             self.OUTPUT, "Adapted model", fileFilter="joblib (*.joblib)"))
@@ -108,6 +114,8 @@ class AdaptModelAlgorithm(QgsProcessingAlgorithm):
             with contextlib.redirect_stdout(buf):
                 adapt(windows, out, mode=mode, bands=bands,
                       weight=self.parameterAsDouble(parameters, self.WEIGHT, context), quiet=False)
+        except RuntimeError as e:
+            raise package_error(e)
         except Exception as e:
             raise QgsProcessingException(f"{e}\n{buf.getvalue()[-2000:]}")
         for line in buf.getvalue().splitlines():
