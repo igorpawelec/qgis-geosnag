@@ -19,6 +19,9 @@ class Plugin:
     def initGui(self):
         try:
             from . import vendor_loader
+            # A reinstalled zip must not keep running the previous zip's
+            # package code that is still in sys.modules.
+            vendor_loader.purge_stale()
             vendor_loader.activate()
         except Exception:
             pass

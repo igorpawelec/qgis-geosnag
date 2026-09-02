@@ -27,6 +27,32 @@ def _spec(name):
         return None
 
 
+def purge_stale():
+    """Forget vendored modules already imported from a previous plugin zip.
+
+    Installing a new zip replaces the files under vendor/, but the modules
+    imported from the old files stay in sys.modules for the rest of the QGIS
+    session, so the operator keeps running last week's package code with
+    this week's plugin. Called once on plugin load; only modules whose file
+    lies under the vendor directory are dropped, an installed copy is left
+    alone. Returns the number of modules dropped.
+    """
+    root = os.path.abspath(VENDOR_DIR)
+    dropped = 0
+    for name in list(sys.modules):
+        top = name.split(".")[0]
+        if top not in VENDORED:
+            continue
+        mod = sys.modules.get(name)
+        origin = getattr(mod, "__file__", None) or ""
+        if origin and os.path.abspath(origin).startswith(root):
+            del sys.modules[name]
+            dropped += 1
+    if dropped:
+        importlib.invalidate_caches()
+    return dropped
+
+
 def activate(feedback=None):
     """Put the vendored copies on sys.path if the packages are not installed.
 

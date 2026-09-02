@@ -114,7 +114,7 @@ class AdaptModelAlgorithm(QgsProcessingAlgorithm):
             with contextlib.redirect_stdout(buf):
                 adapt(windows, out, mode=mode, bands=bands,
                       weight=self.parameterAsDouble(parameters, self.WEIGHT, context), quiet=False)
-        except RuntimeError as e:
+        except (RuntimeError, OSError) as e:
             raise package_error(e)
         except Exception as e:
             raise QgsProcessingException(f"{e}\n{buf.getvalue()[-2000:]}")

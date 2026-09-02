@@ -183,7 +183,7 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
                 return {}
             raise package_error(e)
         except (ValueError, OSError) as e:
-            raise QgsProcessingException(str(e))
+            raise package_error(e)
         feedback.pushInfo(f"{n} dead-crown objects")
         styling.style_polygons(context, out)
         if points:

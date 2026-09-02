@@ -90,9 +90,12 @@ def set_assets_dir(path, feedback=None):
 def package_error(e):
     """A pygeosnag RuntimeError as a readable Processing error."""
     msg = str(e)
-    if "could not download" in msg:
-        msg += ("\n\nIn QGIS: open Advanced and set 'Local models folder' to the folder that holds "
-                "manifest.json and the segments_*.joblib files. It is remembered for later runs.")
+    if any(k in msg for k in ("could not download", "HTTP Error", "URLError", "urlopen", "Not Found")):
+        msg += ("\n\nThe models could not be downloaded (the pygeosnag GitHub release is not published "
+                "yet, or the machine is offline). Copy manifest.json and the model files into "
+                f"{os.path.join(os.path.expanduser('~'), '.cache', 'pygeosnag', 'assets-v1')} -- that is "
+                "where pygeosnag looks without any setting -- or open Advanced and set 'Local models "
+                "folder' to the folder that holds them; it is remembered for later runs.")
     return QgsProcessingException(msg)
 
 
