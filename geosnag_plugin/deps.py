@@ -5,26 +5,36 @@ interpreter*. The three pure-Python packages (pygeosnag, pygeoadaptels,
 pygeopalette) ride along inside the plugin (see ``vendor_loader``), so this
 module only ever has to fetch the ones that carry compiled binaries.
 
-Lessons carried over from the GeoAdaptels + GeoPalette plugin, learned
-against QGIS 3.40/3.44 (Python 3.12) on Windows:
+**Where they go: a plugin-private folder, never the user site.** The first
+version used ``pip install --user``, as the GeoAdaptels + GeoPalette plugin
+does. That writes into ``%APPDATA%/Python/Python312/site-packages``, which
+*every* Python 3.12 on the machine reads before its own site-packages --
+conda environments included. The plugin's scikit-learn 1.9 then shadowed a
+conda environment's 1.8 and broke it (a missing dependency), and the older
+plugin's numba and rasterio had been shadowing that environment's for
+months without anyone noticing. So the binary dependencies are installed
+with ``pip --target`` into ``<plugin>/libs``, which only this plugin puts on
+``sys.path``. Reinstalling the plugin zip keeps the folder (QGIS replaces
+the files it ships, not the folder), and deleting it just triggers a fresh
+install.
 
-1. ``sys.executable`` is a launcher, not the interpreter (``bin/python3.exe``
-   does not initialise as a subprocess); the real one sits at ``sys.prefix``.
-2. Recent rasterio/fiona drag in numpy 2.x, which breaks numba and scipy
-   on the numpy 1.26 that QGIS ships; the installs are pinned to keep the
-   interpreter's numpy.
-3. pip's real error is captured and reported, not swallowed.
-4. PEP 668 externally-managed interpreters are retried with
-   ``--break-system-packages``.
+Other lessons kept from the older plugin, learned against QGIS 3.40/3.44
+(Python 3.12) on Windows: ``sys.executable`` is a launcher, not the
+interpreter (the real one sits at ``sys.prefix``); recent rasterio/fiona
+drag in numpy 2.x, which breaks numba and scipy on the numpy 1.26 that QGIS
+ships, so the installs are pinned to keep the interpreter's numpy; pip's
+real error is captured and reported; PEP 668 externally-managed
+interpreters are retried with ``--break-system-packages``.
 
-Policy: auto-install on first use, with the exact manual command in the log
-if it fails. Copyright (C) 2026 Igor Pawelec. Licence: GPLv3.
+Copyright (C) 2026 Igor Pawelec. Licence: GPLv3.
 """
 import importlib
 import importlib.util
 import os
 import subprocess
 import sys
+
+from .vendor_loader import LIBS_DIR
 
 # module name -> pip name. The vendored pure-Python packages are checked but
 # never handed to pip.
@@ -35,18 +45,21 @@ REQUIRED = {
 }
 
 
-def _install_specs(modules=None):
-    """pip specs for the binary dependencies, pinned to the interpreter's numpy line."""
+def _numpy_major():
     try:
         import numpy
-        numpy_major = int(numpy.__version__.split(".")[0])
+        return int(numpy.__version__.split(".")[0])
     except Exception:
-        numpy_major = 1
-    pins = {"rasterio": "rasterio<1.4", "fiona": "fiona<1.10", "numpy": "numpy<2"} if numpy_major < 2 else {}
+        return 1
+
+
+def _install_specs(modules=None):
+    """pip specs for the binary dependencies, pinned to the interpreter's numpy line."""
+    pins = {"rasterio": "rasterio<1.4", "fiona": "fiona<1.10"} if _numpy_major() < 2 else {}
     wanted = [m for m in (modules or REQUIRED) if REQUIRED.get(m)]
     specs = [pins.get(REQUIRED[m], REQUIRED[m]) for m in wanted]
-    if numpy_major < 2 and specs:
-        specs.append(pins["numpy"])            # keep pip from upgrading numpy underneath numba
+    if _numpy_major() < 2 and specs:
+        specs.append("numpy<2")           # keep pip from putting a numpy 2 into libs/ underneath numba
     return specs
 
 
@@ -72,7 +85,8 @@ def missing_packages():
 
 
 def _pip(py, specs, extra=()):
-    cmd = [py, "-m", "pip", "install", "--user", *extra, *specs]
+    os.makedirs(LIBS_DIR, exist_ok=True)
+    cmd = [py, "-m", "pip", "install", "--target", LIBS_DIR, "--upgrade", *extra, *specs]
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
@@ -91,8 +105,7 @@ def ensure_dependencies(feedback=None, auto_install=True):
     vendored_missing = [m for m in missing if not REQUIRED.get(m)]
     if vendored_missing and feedback is not None:
         feedback.reportError(
-            "These are bundled with the plugin but did not import: "
-            + ", ".join(vendored_missing)
+            "These are bundled with the plugin but did not import: " + ", ".join(vendored_missing)
             + ". The plugin's vendor/ folder looks incomplete -- reinstall the plugin zip.")
     if not to_install:
         return False, missing
@@ -100,7 +113,7 @@ def ensure_dependencies(feedback=None, auto_install=True):
     py = _qgis_python()
     specs = _install_specs(to_install)
     if feedback is not None:
-        feedback.pushInfo(f"Installing {', '.join(specs)} using {py}")
+        feedback.pushInfo(f"Installing {', '.join(specs)} into {LIBS_DIR} using {py} (first run only)")
     try:
         r = _pip(py, specs)
         if r.returncode != 0 and "externally-managed-environment" in ((r.stderr or "") + (r.stdout or "")):
@@ -116,10 +129,11 @@ def ensure_dependencies(feedback=None, auto_install=True):
         if feedback is not None:
             tail = (r.stdout or "")[-2000:] + "\n" + (r.stderr or "")[-2000:]
             feedback.reportError("pip failed:\n" + tail.strip()
-                                 + "\n\nInstall by hand into QGIS's Python and restart QGIS:\n  " + manual_hint())
+                                 + "\n\nInstall by hand and restart QGIS:\n  " + manual_hint())
         return False, missing
 
     importlib.invalidate_caches()
+    vendor_loader.activate()
     still = missing_packages()
     if still and feedback is not None:
         feedback.reportError("pip reported success but these are still not importable: "
@@ -129,4 +143,4 @@ def ensure_dependencies(feedback=None, auto_install=True):
 
 def manual_hint():
     py = _qgis_python()
-    return f'"{py}" -m pip install --user ' + " ".join(_install_specs())
+    return f'"{py}" -m pip install --target "{LIBS_DIR}" --upgrade ' + " ".join(_install_specs())

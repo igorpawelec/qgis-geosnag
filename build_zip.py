@@ -14,7 +14,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = "geosnag_plugin"
-SKIP_DIRS = {"__pycache__"}
+SKIP_DIRS = {"__pycache__", "libs"}     # libs/ is what deps.py installs on the target machine
 SKIP_EXT = {".pyc", ".pyo"}
 
 VENDOR_SRC = {

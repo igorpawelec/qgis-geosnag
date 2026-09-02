@@ -18,6 +18,10 @@ import sys
 
 VENDOR_DIR = os.path.join(os.path.dirname(__file__), "vendor")
 VENDORED = ("pygeosnag", "pygeoadaptels", "pygeopalette")
+# The binary dependencies deps.py installs, private to this plugin (never the
+# user site, which every Python of the same minor version on the machine
+# reads -- see deps.py).
+LIBS_DIR = os.path.join(os.path.dirname(__file__), "libs")
 
 
 def _spec(name):
@@ -60,6 +64,11 @@ def activate(feedback=None):
     repeatedly; never raises.
     """
     status = {}
+    # The plugin-private binary dependencies. Appended, so anything QGIS's own
+    # Python already provides keeps winning.
+    if os.path.isdir(LIBS_DIR) and LIBS_DIR not in sys.path:
+        sys.path.append(LIBS_DIR)
+        importlib.invalidate_caches()
     need_vendor = False
     for name in VENDORED:
         if _spec(name) is not None:

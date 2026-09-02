@@ -1,16 +1,16 @@
-"""The Processing provider: two algorithms."""
+"""The Processing provider: Detect dead trees (points) and Grow crowns."""
 import os
 
 from qgis.core import QgsProcessingProvider
 from qgis.PyQt.QtGui import QIcon
 
-from .algorithms.adapt import AdaptModelAlgorithm
 from .algorithms.detect import DetectDeadTreesAlgorithm
+from .algorithms.grow import GrowCrownsAlgorithm
 
 
 class GeoSnagProvider(QgsProcessingProvider):
     def loadAlgorithms(self):
-        for alg in (DetectDeadTreesAlgorithm(), AdaptModelAlgorithm()):
+        for alg in (DetectDeadTreesAlgorithm(), GrowCrownsAlgorithm()):
             self.addAlgorithm(alg)
 
     def id(self):
@@ -22,7 +22,7 @@ class GeoSnagProvider(QgsProcessingProvider):
         return "GeoSnag"
 
     def longName(self):
-        return "GeoSnag (standing dead tree detection on orthophotos)"
+        return "GeoSnag (standing dead trees on orthophotos: points, then crowns)"
 
     def icon(self):
         p = os.path.join(os.path.dirname(__file__), "icon.png")
