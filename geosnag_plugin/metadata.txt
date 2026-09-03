@@ -2,7 +2,7 @@
 name=GeoSnag
 qgisMinimumVersion=3.28
 description=Standing dead trees on aerial orthophotos: one point per tree, then crowns grown from the points.
-version=0.3.2
+version=0.3.3
 author=Igor Pawelec
 email=igor.pawelec@urk.edu.pl
 about=QGIS Processing provider for the pygeosnag Python package. "Detect dead trees" takes an RGB+NIR, CIR or RGB orthophoto and writes one point per standing dead tree with a confidence (adaptel micro-segmentation, a random forest trained on seven Polish forest sites, an optional stand mask). "Grow crowns" grows the points into crown polygons with pygeoadaptels' seeded region growing and a crown recipe. The algorithms stay in the packages; this plugin is glue. pygeosnag, pygeoadaptels and pygeopalette are bundled; numba, scipy, scikit-learn, joblib, rasterio, fiona and shapely are installed into the plugin's own libs folder on first run. The models are downloaded on first use from the pygeosnag GitHub release.
@@ -14,7 +14,8 @@ category=Analysis
 tags=raster,dead trees,snags,forestry,remote sensing,orthophoto,segmentation,random forest,region growing
 experimental=True
 deprecated=False
-changelog=0.3.2 -- height gate: an optional canopy height model (or a surface and a terrain model under Advanced) drops points below 5 m -- bare ground, roads and stumps -- and writes height_m. Bundles pygeosnag 0.2.1.
+changelog=0.3.3 -- the height gate takes the maximum within a radius (3 m) and defaults to 3 m: a ground separator, never crown evidence; radius under Advanced. Bundles pygeosnag 0.2.1.
+    0.3.2 -- height gate: an optional canopy height model (or a surface and a terrain model under Advanced) drops points below 5 m -- bare ground, roads and stumps -- and writes height_m. Bundles pygeosnag 0.2.1.
     0.3.1 -- fixed a crash (access violation in on_complete) after a run on a full orthophoto with the probability raster requested: the raster was contrast-stretched with a cumulative cut, a full-pixel scan on the GUI thread while the task was being torn down. The probability raster now gets a fixed 0-1 pseudocolour and nothing is read in the completion handler.
     0.3.0 -- the product is a point per dead tree: "Detect dead trees" writes points (centroid of the merged adaptels, 3 m duplicate suppression), "Grow crowns" grows them with pygeoadaptels' seeded growing and the crown recipe. Score, extract and adapt are gone from the toolbox. Binary dependencies go into the plugin's own libs folder, never the user site. Bundles pygeosnag 0.2.0.
     0.1.2 -- a reinstalled zip no longer keeps running the previous zip's package code; a failed model download names the cache folder to copy the models into.
