@@ -1,0 +1,78 @@
+# What can be checked without a QGIS: the plugin's modules import and build
+# their dialogs against a stub `qgis` module, pyflakes finds nothing, and the
+# zip builds with the three packages vendored. The Processing runtime itself
+# is tested in a live QGIS.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the plugin
+        uses: actions/checkout@v4
+        with:
+          path: qgis-geosnag
+
+      - name: Check out pygeosnag (vendored into the zip)
+        uses: actions/checkout@v4
+        with:
+          repository: igorpawelec/pygeosnag
+          path: pygeosnag
+
+      - name: Check out pygeoadaptels (vendored into the zip)
+        uses: actions/checkout@v4
+        with:
+          repository: igorpawelec/pygeoadaptels
+          path: pygeoadaptels
+
+      - name: Check out pygeopalette (vendored into the zip)
+        uses: actions/checkout@v4
+        with:
+          repository: igorpawelec/pygeopalette
+          path: pygeopalette
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the test tools
+        run: python -m pip install pytest pyflakes
+
+      - name: Lint
+        working-directory: qgis-geosnag
+        run: python -m pyflakes geosnag_plugin/ build_zip.py test_package_calls.py tests/test_stub_import.py
+
+      - name: Import the plugin against a stub qgis
+        working-directory: qgis-geosnag
+        run: python -m pytest -v tests/test_stub_import.py
+
+      - name: Build the zip
+        working-directory: qgis-geosnag
+        run: python build_zip.py
+
+      - name: Check the zip really carries the vendored packages
+        working-directory: qgis-geosnag
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          z = sorted(glob.glob("dist/*.zip"))
+          assert z, "no zip was produced"
+          names = zipfile.ZipFile(z[-1]).namelist()
+          for pkg in ("pygeosnag", "pygeoadaptels", "pygeopalette"):
+              assert [n for n in names if f"vendor/{pkg}/__init__.py" in n], f"{pkg} missing from vendor/"
+          assert not [n for n in names if n.endswith(".pyc")], "bytecode in zip"
+          assert not [n for n in names if "/libs/" in n], "an installed libs/ folder leaked into the zip"
+          print(f"{z[-1]}: {len(names)} files, three packages vendored")
+          PY
+
+      - name: Keep the zip as a build artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: geosnag_plugin-zip
+          path: qgis-geosnag/dist/*.zip

@@ -1,0 +1,71 @@
+# Build the installable plugin zip on every version tag and attach it to the
+# release, so an operator downloads one file from Releases and installs it.
+#
+# The build vendors the three pure-Python packages from checkouts *beside*
+# this repository, which is why they are cloned first into the parent
+# directory, at their default branches. Pin them here if a release should be
+# tied to specific package versions.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the plugin
+        uses: actions/checkout@v4
+        with:
+          path: qgis-geosnag
+
+      - name: Check out pygeosnag (vendored into the zip)
+        uses: actions/checkout@v4
+        with:
+          repository: igorpawelec/pygeosnag
+          path: pygeosnag
+
+      - name: Check out pygeoadaptels (vendored into the zip)
+        uses: actions/checkout@v4
+        with:
+          repository: igorpawelec/pygeoadaptels
+          path: pygeoadaptels
+
+      - name: Check out pygeopalette (vendored into the zip)
+        uses: actions/checkout@v4
+        with:
+          repository: igorpawelec/pygeopalette
+          path: pygeopalette
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the zip
+        working-directory: qgis-geosnag
+        run: python build_zip.py
+
+      - name: Check the zip really carries the vendored packages
+        working-directory: qgis-geosnag
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          z = sorted(glob.glob("dist/*.zip"))
+          assert z, "no zip was produced"
+          names = zipfile.ZipFile(z[-1]).namelist()
+          for pkg in ("pygeosnag", "pygeoadaptels", "pygeopalette"):
+              assert [n for n in names if f"vendor/{pkg}/__init__.py" in n], f"{pkg} missing from vendor/"
+          assert not [n for n in names if n.endswith(".pyc")], "bytecode in zip"
+          print(f"{z[-1]}: {len(names)} files, three packages vendored")
+          PY
+
+      - name: Attach the zip to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: qgis-geosnag/dist/*.zip
+          generate_release_notes: true
