@@ -46,6 +46,11 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
     STAND_BUFFER = "STAND_BUFFER"
     KEEP_OUTSIDE = "KEEP_OUTSIDE"
     SUPPRESS = "SUPPRESS"
+    CHM = "CHM"
+    DSM = "DSM"
+    DTM = "DTM"
+    MIN_HEIGHT = "MIN_HEIGHT"
+    KEEP_LOW = "KEEP_LOW"
     ASSETS = "ASSETS"
     PROB = "PROB"
 
@@ -79,6 +84,11 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             "<p><b>Stand polygons.</b> Optional. Forest-management polygons with a stand age "
             "field (<code>species_age</code>): points inside stands of at least 10 years, "
             "shrunk by 2 m, are kept; roads and fields fall out.</p>"
+            "<p><b>Canopy height model.</b> Optional, and the cheapest filter there is: a point "
+            "whose height is below 5 m (Advanced) is bare ground, a road or a stump, not a "
+            "standing dead tree, and is dropped. A surface and a terrain model (GUGiK NMPT and "
+            "NMT, 1 m) can be given instead under Advanced; their difference is used. The "
+            "height is written as <code>height_m</code>.</p>"
             "<p>Measured with the site under test never seen in training: recall 63%, "
             "precision 33% against an incomplete reference and 55&ndash;75% after a field "
             "review; points a median 0.47 m from the reference top.</p>")
@@ -91,6 +101,16 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             QgsProcessingParameterNumber.Double, defaultValue=0.5, minValue=0.05, maxValue=0.95))
         self.addParameter(QgsProcessingParameterVectorLayer(
             self.STANDS, "Stand polygons (optional mask)", [QgsProcessing.TypeVectorPolygon], optional=True))
+        self.addParameter(QgsProcessingParameterRasterLayer(
+            self.CHM, "Canopy height model (optional; points below 5 m are dropped)", optional=True))
+        self.addParameter(advanced(QgsProcessingParameterRasterLayer(
+            self.DSM, "Surface model (DSM), with the terrain model an alternative to the CHM", optional=True)))
+        self.addParameter(advanced(QgsProcessingParameterRasterLayer(
+            self.DTM, "Terrain model (DTM)", optional=True)))
+        self.addParameter(advanced(QgsProcessingParameterNumber(
+            self.MIN_HEIGHT, "Height gate (m)", QgsProcessingParameterNumber.Double, defaultValue=5.0, minValue=0.0)))
+        self.addParameter(advanced(QgsProcessingParameterBoolean(
+            self.KEEP_LOW, "Keep points below the gate, with height_m written", defaultValue=False)))
         self.addParameter(advanced(QgsProcessingParameterString(
             self.BANDS, "Band roles in raster order, e.g. nir,red,green,blue (empty = default)",
             defaultValue="", optional=True)))
@@ -125,6 +145,14 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         bands = tuple(b.strip() for b in bands_s.split(",")) if bands_s else None
         stands_layer = self.parameterAsVectorLayer(parameters, self.STANDS, context)
         stands, stand_layer = _split_source(stands_layer) if stands_layer is not None else (None, None)
+        chm_layer = self.parameterAsRasterLayer(parameters, self.CHM, context)
+        dsm_layer = self.parameterAsRasterLayer(parameters, self.DSM, context)
+        dtm_layer = self.parameterAsRasterLayer(parameters, self.DTM, context)
+        chm = source_path(chm_layer) if chm_layer is not None else None
+        dsm = source_path(dsm_layer) if dsm_layer is not None else None
+        dtm = source_path(dtm_layer) if dtm_layer is not None else None
+        if (dsm is None) != (dtm is None):
+            raise QgsProcessingException("Give both the surface and the terrain model, or a canopy height model.")
         set_assets_dir(self.parameterAsFile(parameters, self.ASSETS, context) or None, feedback)
         out = self.parameterAsOutputLayer(parameters, self.OUTPUT, context)
         if not out.lower().endswith(".gpkg"):
@@ -139,6 +167,9 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
                        stand_age=self.parameterAsDouble(parameters, self.STAND_AGE, context),
                        stand_buffer=self.parameterAsDouble(parameters, self.STAND_BUFFER, context),
                        keep_outside=self.parameterAsBool(parameters, self.KEEP_OUTSIDE, context),
+                       chm=chm, dsm=dsm, dtm=dtm,
+                       min_height=self.parameterAsDouble(parameters, self.MIN_HEIGHT, context),
+                       keep_low=self.parameterAsBool(parameters, self.KEEP_LOW, context),
                        prob_raster=prob, progress=progress_adapter(feedback), quiet=True)
         except RuntimeError as e:
             if "cancelled" in str(e):
