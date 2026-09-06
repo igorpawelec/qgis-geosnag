@@ -5,13 +5,22 @@ visible underneath; the probability raster gets a contrast stretch. Every
 entry point is wrapped so a styling failure can never fail the run.
 
 Two QGIS traps carried over from the GeoAdaptels + GeoPalette plugin:
-post-processor objects must be kept alive after postProcessAlgorithm
-returns (parked in ``_KEEP_ALIVE``), and ``layerToLoadOnCompletionDetails``
-inserts a default entry for an unknown id, so ``willLoadLayerOnCompletion``
-is asked first. Copyright (C) 2026 Igor Pawelec. Licence: GPLv3.
+a post-processor must not be garbage-collected before the layer is loaded,
+and ``layerToLoadOnCompletionDetails`` inserts a default entry for an
+unknown id, so ``willLoadLayerOnCompletion`` is asked first.
+
+On the first trap the older plugin was wrong, and this one inherited it.
+``LayerDetails.setPostProcessor`` says "Ownership of processor is
+transferred", and on QGIS 3.44 it is: ``sip.ispyowned`` goes from True to
+False across the call. Parking every processor in a module-level list that
+is never emptied therefore kept one dead object per algorithm run for the
+rest of the QGIS session. The reference is now kept only if ownership did
+*not* transfer, and only until the run that needs it is over.
+Copyright (C) 2026 Igor Pawelec. Licence: GPLv3.
 """
 from qgis.core import QgsFillSymbol, QgsProcessingLayerPostProcessorInterface
 
+# Only for a QGIS whose bindings do not take ownership; emptied on each run.
 _KEEP_ALIVE = []
 
 
@@ -94,11 +103,22 @@ def _register(context, dest_id, processor):
         details = context.layerToLoadOnCompletionDetails(dest_id)
         if details is None:
             return False
-        _KEEP_ALIVE.append(processor)
+        del _KEEP_ALIVE[:]                       # last run's, if any
         details.setPostProcessor(processor)
+        if _still_ours(processor):               # bindings without /Transfer/
+            _KEEP_ALIVE.append(processor)
         return True
     except Exception:
         return False
+
+
+def _still_ours(processor):
+    """True when Python, not C++, owns the processor after the hand-over."""
+    try:
+        from qgis.PyQt import sip
+        return bool(sip.ispyowned(processor))
+    except Exception:
+        return True                              # cannot tell: keep it, as before
 
 
 class ScoredPostProcessor(QgsProcessingLayerPostProcessorInterface):
