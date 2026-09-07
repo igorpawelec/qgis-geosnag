@@ -7,7 +7,8 @@ from qgis.core import QgsProcessingException
 from ..deps import ensure_dependencies, manual_hint
 
 _WARMED = False
-MODES = ["auto (4 bands = RGB+NIR, 3 bands = RGB)", "rgbn (R, G, B, NIR)", "cir (NIR, R, G)", "rgb (R, G, B)"]
+MODES = ["auto (4 bands = RGB+NIR; 3 bands = CIR when band 2 is the darkest, else RGB; see the log)",
+         "rgbn (R, G, B, NIR)", "cir (NIR, R, G)", "rgb (R, G, B)"]
 MODE_KEYS = [None, "rgbn", "cir", "rgb"]
 SCENE_NORM_OPTIONS = ["auto (as the models were trained; the manifest decides)",
                       "off (only for a model trained without it)"]

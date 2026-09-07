@@ -2,7 +2,7 @@
 name=GeoSnag
 qgisMinimumVersion=3.28
 description=Standing dead trees on aerial orthophotos: one point per tree, then crowns grown from the points.
-version=0.4.0
+version=0.4.1
 author=Igor Pawelec
 email=igor.pawelec@urk.edu.pl
 about=QGIS Processing provider for the pygeosnag Python package. "Detect dead trees" takes an RGB+NIR, CIR or RGB orthophoto and writes one point per standing dead tree with a confidence (adaptel micro-segmentation, a random forest trained with whole-crown labels on ten Polish forest sites, spectral means standardised within the scene, an optional stand mask, an optional cut on the object score). "Grow crowns" grows the points into crown polygons with pygeoadaptels' seeded region growing and a crown recipe. The algorithms stay in the packages; this plugin is glue. pygeosnag, pygeoadaptels and pygeopalette are bundled; numba, scipy, scikit-learn, joblib, rasterio, fiona and shapely are installed into the plugin's own libs folder on first run. The models are downloaded on first use from the pygeosnag GitHub release.
@@ -14,7 +14,13 @@ category=Analysis
 tags=raster,dead trees,snags,forestry,remote sensing,orthophoto,segmentation,random forest,region growing
 experimental=True
 deprecated=False
-changelog=0.4.0
+changelog=0.4.1
+    Band mode auto now tells a CIR orthophoto from an RGB one (band 2 the
+    darkest over the sampled pixels = NIR, R, G) and a NIR-first 4-band
+    stack from R, G, B, NIR; the first log line names the decision. A
+    CIR raster run as RGB found almost nothing. The packages line no
+    longer reports the bundled copies as installed. Bundles pygeosnag 0.3.1.
+    0.4.0
     Models assets-v2 (pygeosnag 0.3.0): whole-crown labels from ten sites;
     the RGB+NIR and CIR models score spectral means standardised within
     the scene (a first pass over 16 tiles; "Scene normalisation" under

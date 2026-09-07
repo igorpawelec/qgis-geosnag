@@ -70,9 +70,14 @@ def activate(feedback=None):
         sys.path.append(LIBS_DIR)
         importlib.invalidate_caches()
     need_vendor = False
+    root = os.path.abspath(VENDOR_DIR)
     for name in VENDORED:
-        if _spec(name) is not None:
-            status[name] = "installed"
+        spec = _spec(name)
+        if spec is not None:
+            origin = getattr(spec, "origin", "") or ""
+            # already importable: an installed copy, or our own vendor/ put
+            # on sys.path by an earlier call in this session
+            status[name] = "vendored" if root in os.path.abspath(origin) else "installed"
         else:
             need_vendor = True
     if need_vendor and os.path.isdir(VENDOR_DIR):
