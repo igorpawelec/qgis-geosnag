@@ -56,6 +56,45 @@ def require_packages(feedback):
         raise QgsProcessingException(
             "This algorithm needs the Python packages: " + ", ".join(missing)
             + ".\nInstall them into QGIS's own Python and restart QGIS:\n  " + manual_hint())
+    check_session_packages(feedback)
+
+
+def check_session_packages(feedback):
+    """Log which copy of each bundled package this session actually runs,
+    and refuse to run stale code.
+
+    When the plugin's files are replaced under a running QGIS (a zip
+    installed, or the folder copied over, without a restart), sys.modules
+    keeps the previous version and a run silently uses it: the log then
+    claims the new plugin while the old package computes. Seen with 0.4.1:
+    the session kept pygeosnag 0.3.0, whose auto band mode read a CIR
+    orthophoto as RGB. The version in memory is compared with
+    vendor/VERSIONS.txt; a mismatch is an error naming the fix.
+    """
+    import importlib
+
+    from .. import vendor_loader
+    bundled = vendor_loader.vendored_versions()
+    root = os.path.abspath(vendor_loader.VENDOR_DIR)
+    lines, stale = [], []
+    for name in vendor_loader.VENDORED:
+        try:
+            mod = importlib.import_module(name)
+        except Exception as exc:                  # noqa: BLE001 -- reported, not fatal here
+            lines.append(f"{name}: not importable ({exc})")
+            continue
+        origin = os.path.abspath(getattr(mod, "__file__", "") or "")
+        ver = str(getattr(mod, "__version__", "?"))
+        where = "bundled" if origin.startswith(root) else "installed"
+        lines.append(f"{name} {ver} ({where})")
+        if where == "bundled" and bundled.get(name) and bundled[name] != ver:
+            stale.append(f"{name} {ver} in memory, {bundled[name]} in the plugin folder")
+    if feedback is not None:
+        feedback.pushInfo("Running: " + ", ".join(lines))
+    if stale:
+        raise QgsProcessingException(
+            "This QGIS session still runs the previous plugin code (" + "; ".join(stale)
+            + "). The plugin was updated while QGIS was open; restart QGIS and run again.")
 
 
 SETTINGS_KEY = "geosnag/assets_dir"
