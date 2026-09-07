@@ -73,14 +73,40 @@ def _qgis_python():
     return sys.executable
 
 
-def missing_packages():
+def _importable(name):
+    """``(True, "")`` when the module can be imported, else ``(False, why)``.
+
+    ``find_spec`` alone is not trusted: in a long QGIS session it answered
+    None for scikit-learn and joblib that sat in libs/ and imported fine --
+    a FileFinder for libs/ or another plugin's finder holding a stale
+    answer until the import caches were cleared (which pip's post-install
+    step did, so every session paid a pip run "for the first time"). An
+    import that succeeds is the last word; one that fails gives the reason
+    for the log.
+    """
+    try:
+        if importlib.util.find_spec(name) is not None:
+            return True, ""
+        why = "find_spec found nothing on sys.path"
+    except (ImportError, ValueError) as exc:
+        why = f"find_spec: {exc}"
+    try:
+        importlib.import_module(name)
+        return True, ""
+    except Exception as exc:                      # noqa: BLE001 -- the reason is reported, not hidden
+        return False, f"{why}; import: {type(exc).__name__}: {str(exc)[:160]}"
+
+
+def missing_packages(reasons=None):
+    """Names that cannot be imported; ``reasons`` (a dict) collects why."""
+    importlib.invalidate_caches()
     out = []
     for m in REQUIRED:
-        try:
-            if importlib.util.find_spec(m) is None:
-                out.append(m)
-        except (ImportError, ValueError):
+        ok, why = _importable(m)
+        if not ok:
             out.append(m)
+            if reasons is not None:
+                reasons[m] = why
     return out
 
 
@@ -95,9 +121,12 @@ def ensure_dependencies(feedback=None, auto_install=True):
     from . import vendor_loader
     vendor_loader.activate(feedback)
 
-    missing = missing_packages()
+    reasons = {}
+    missing = missing_packages(reasons)
     if not missing:
         return True, []
+    if feedback is not None:
+        feedback.pushInfo("Not importable: " + "; ".join(f"{m} ({reasons.get(m, '?')})" for m in missing))
     if not auto_install:
         return False, missing
 
@@ -113,7 +142,8 @@ def ensure_dependencies(feedback=None, auto_install=True):
     py = _qgis_python()
     specs = _install_specs(to_install)
     if feedback is not None:
-        feedback.pushInfo(f"Installing {', '.join(specs)} into {LIBS_DIR} using {py} (first run only)")
+        feedback.pushInfo(f"Installing {', '.join(specs)} into {LIBS_DIR} using {py} "
+                          "(only when a package is not importable; the line above says why)")
     try:
         r = _pip(py, specs)
         if r.returncode != 0 and "externally-managed-environment" in ((r.stderr or "") + (r.stdout or "")):

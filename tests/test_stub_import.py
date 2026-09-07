@@ -47,5 +47,12 @@ def test_styling_and_deps_helpers():
     assert callable(styling.style_stretched_raster)
     specs = deps._install_specs()
     assert "scikit-learn" in specs and "numba" in specs
+    ok, why = deps._importable("os")
+    assert ok and why == ""
+    ok, why = deps._importable("no_such_module_xyz")
+    assert not ok and "import" in why
+    reasons = {}
+    deps.missing_packages(reasons)
+    assert all(m in reasons for m in deps.REQUIRED if m in deps.missing_packages())
     assert vendor_loader.LIBS_DIR.endswith("libs")
     assert vendor_loader.purge_stale() == 0

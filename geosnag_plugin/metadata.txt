@@ -2,7 +2,7 @@
 name=GeoSnag
 qgisMinimumVersion=3.28
 description=Standing dead trees on aerial orthophotos: one point per tree, then crowns grown from the points.
-version=0.4.2
+version=0.4.3
 author=Igor Pawelec
 email=igor.pawelec@urk.edu.pl
 about=QGIS Processing provider for the pygeosnag Python package. "Detect dead trees" takes an RGB+NIR, CIR or RGB orthophoto and writes one point per standing dead tree with a confidence (adaptel micro-segmentation, a random forest trained with whole-crown labels on ten Polish forest sites, spectral means standardised within the scene, an optional stand mask, an optional cut on the object score). "Grow crowns" grows the points into crown polygons with pygeoadaptels' seeded region growing and a crown recipe. The algorithms stay in the packages; this plugin is glue. pygeosnag, pygeoadaptels and pygeopalette are bundled; numba, scipy, scikit-learn, joblib, rasterio, fiona and shapely are installed into the plugin's own libs folder on first run. The models are downloaded on first use from the pygeosnag GitHub release.
@@ -14,7 +14,13 @@ category=Analysis
 tags=raster,dead trees,snags,forestry,remote sensing,orthophoto,segmentation,random forest,region growing
 experimental=True
 deprecated=False
-changelog=0.4.2
+changelog=0.4.3
+    The dependency check no longer takes find_spec's word for it: it clears
+    the import caches, and a package that imports is present. Every session
+    used to re-run pip for scikit-learn and joblib that sat in libs/ and
+    imported fine. When pip is still needed the log first says why each
+    package was not importable.
+    0.4.2
     A run now names the package versions it actually executes and refuses
     to run when the plugin was updated under a running QGIS (the session
     keeps the previous code in memory until a restart; a 0.4.1 session
