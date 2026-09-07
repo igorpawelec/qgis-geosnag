@@ -2,7 +2,9 @@
 
 Five things on the dialog: the orthophoto, the band mode, the threshold,
 an optional stand layer and the output. The rest sits under Advanced with
-the values the research calibrated.
+the values the research calibrated: since assets-v2 that includes the scene
+normalisation the RGB+NIR and CIR models expect and an optional cut on the
+object score.
 """
 from qgis.core import (
     QgsProcessing,
@@ -20,8 +22,8 @@ from qgis.core import (
 )
 
 from .. import styling
-from ._base import (MODE_KEYS, MODES, advanced, package_error, progress_adapter,
-                    require_packages, set_assets_dir, source_path, warm_jit)
+from ._base import (MODE_KEYS, MODES, SCENE_NORM_KEYS, SCENE_NORM_OPTIONS, advanced, package_error,
+                    progress_adapter, report_models, require_packages, set_assets_dir, source_path, warm_jit)
 
 
 def _split_source(layer):
@@ -54,6 +56,9 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
     KEEP_LOW = "KEEP_LOW"
     ASSETS = "ASSETS"
     PROB = "PROB"
+    OBJECT_THRESHOLD = "OBJECT_THRESHOLD"
+    SCENE_NORM = "SCENE_NORM"
+    NORM_TILES = "NORM_TILES"
 
     def name(self):
         return "detect"
@@ -74,14 +79,25 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         return (
             "<p>One point per standing dead tree, from the orthophoto alone: adaptel "
             "micro-segmentation, twenty spectral and contextual features per adaptel, a "
-            "random forest trained on seven Polish forest sites, a probability threshold, "
-            "adjacent detections merged and their centroid taken as the point. The points are "
-            "seeds for <i>Grow crowns</i>.</p>"
+            "random forest trained with whole-crown labels on ten Polish forest sites (the "
+            "pygeosnag models <code>assets-v2</code>), a probability threshold, adjacent "
+            "detections merged and their centroid taken as the point. The points are seeds for "
+            "<i>Grow crowns</i>.</p>"
             "<p><b>Band mode.</b> Auto takes 4 bands as R, G, B, NIR and 3 bands as R, G, B. "
             "A CIR orthophoto looks like any 3-band raster, so choose <i>cir</i> for it.</p>"
-            "<p><b>Threshold.</b> 0.5 is calibrated on the training sites; 0.4&ndash;0.6 is "
-            "the useful range. On a scene the model has not seen (another camera, species or "
-            "decay stage) the ranking is usually right and the scale is not: lower it.</p>"
+            "<p><b>Threshold.</b> 0.7 is the models' operating point. On a scene never seen in "
+            "training (Bialowieza, 2018 flight) recall stays at 61% from 0.6 to 0.8 while "
+            "precision rises from 23% to 30%: lower it for completeness, raise it for a cleaner "
+            "map. On imagery unlike the training sites (another camera, species or decay stage) "
+            "the ranking is usually right and the scale is not: lower it.</p>"
+            "<p><b>Scene normalisation.</b> The RGB+NIR and CIR models score spectral means "
+            "standardised within the scene: a first pass over 16 tiles (Advanced) gathers the "
+            "scene's medians and spreads before any tile is scored. This is what lets a model "
+            "trained on one set of flights read a flight with a different colour balance. Leave "
+            "it on auto; the models' manifest decides.</p>"
+            "<p><b>Object score.</b> RGB+NIR points also carry <code>p_object</code>, a second, "
+            "stricter score from a forest that looks at the whole merged object. Dropping points "
+            "below 0.4 (Advanced) keeps about two thirds of the trees at half the false points.</p>"
             "<p><b>Stand polygons.</b> Optional. Forest-management polygons with a stand age "
             "field (<code>species_age</code>): points inside stands of at least 10 years, "
             "shrunk by 2 m, are kept; roads and fields fall out.</p>"
@@ -94,16 +110,17 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             "difference is used. Mind the vintage: a height model taken after the imagery shows "
             "cleared stands where the dead trees stood. The height is written as "
             "<code>height_m</code>.</p>"
-            "<p>Measured with the site under test never seen in training: recall 63%, "
-            "precision 33% against an incomplete reference and 55&ndash;75% after a field "
-            "review; points a median 0.47 m from the reference top.</p>")
+            "<p>Measured with the site under test never seen in training (a hit within 1.5 m of "
+            "a reference top): F1 0.61 for RGB+NIR, 0.55 for CIR and for RGB. On Bialowieza, "
+            "never trained on, 61% of the trees dead by the flight at the operating point, "
+            "against an ALS reference that is not the image's.</p>")
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT, "Orthophoto"))
         self.addParameter(QgsProcessingParameterEnum(self.MODE, "Band mode", options=MODES, defaultValue=0))
         self.addParameter(QgsProcessingParameterNumber(
-            self.THRESHOLD, "Probability threshold (0.5 calibrated; lower on an unfamiliar scene)",
-            QgsProcessingParameterNumber.Double, defaultValue=0.5, minValue=0.05, maxValue=0.95))
+            self.THRESHOLD, "Probability threshold (0.7 = the models' operating point; lower for completeness or on an unfamiliar scene)",
+            QgsProcessingParameterNumber.Double, defaultValue=0.7, minValue=0.05, maxValue=0.95))
         self.addParameter(QgsProcessingParameterVectorLayer(
             self.STANDS, "Stand polygons (optional mask)", [QgsProcessing.TypeVectorPolygon], optional=True))
         self.addParameter(QgsProcessingParameterRasterLayer(
@@ -134,6 +151,14 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(advanced(QgsProcessingParameterNumber(
             self.SUPPRESS, "Drop the weaker of two points closer than (m)", QgsProcessingParameterNumber.Double,
             defaultValue=3.0, minValue=0.0)))
+        self.addParameter(advanced(QgsProcessingParameterNumber(
+            self.OBJECT_THRESHOLD, "Drop RGB+NIR points with p_object below (0 = keep all; 0.4 halves the false points)",
+            QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0, maxValue=1.0)))
+        self.addParameter(advanced(QgsProcessingParameterEnum(
+            self.SCENE_NORM, "Scene normalisation of the spectral means", options=SCENE_NORM_OPTIONS, defaultValue=0)))
+        self.addParameter(advanced(QgsProcessingParameterNumber(
+            self.NORM_TILES, "Scene normalisation: tiles sampled for the scene statistics",
+            QgsProcessingParameterNumber.Integer, defaultValue=16, minValue=1)))
         self.addParameter(advanced(QgsProcessingParameterFile(
             self.ASSETS, "Local models folder (remembered; empty = last used or download)",
             behavior=QgsProcessingParameterFile.Folder, optional=True)))
@@ -167,10 +192,16 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         if not out.lower().endswith(".gpkg"):
             raise QgsProcessingException("The output must be a GeoPackage (.gpkg): pygeosnag writes it directly.")
         prob = self.parameterAsOutputLayer(parameters, self.PROB, context) or None
+        threshold = self.parameterAsDouble(parameters, self.THRESHOLD, context)
+        object_threshold = self.parameterAsDouble(parameters, self.OBJECT_THRESHOLD, context) or None
+        scene_norm = SCENE_NORM_KEYS[self.parameterAsEnum(parameters, self.SCENE_NORM, context)]
+        norm_tiles = self.parameterAsInt(parameters, self.NORM_TILES, context)
+        report_models(feedback, threshold)
         from pygeosnag.detect import detect
         try:
             n = detect(source_path(layer), out, mode=mode, bands=bands,
-                       threshold=self.parameterAsDouble(parameters, self.THRESHOLD, context),
+                       threshold=threshold, object_threshold=object_threshold,
+                       scene_norm=scene_norm, norm_tiles=norm_tiles,
                        suppress_m=self.parameterAsDouble(parameters, self.SUPPRESS, context),
                        stands=stands, stand_layer=stand_layer,
                        stand_age=self.parameterAsDouble(parameters, self.STAND_AGE, context),
@@ -187,6 +218,12 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             raise package_error(e)
         except (ValueError, OSError) as e:
             raise package_error(e)
+        except TypeError as e:
+            if "scene_norm" in str(e) or "object_threshold" in str(e):
+                raise QgsProcessingException(
+                    "An older pygeosnag (< 0.3.0) is installed in QGIS's Python and shadows the copy bundled "
+                    "with the plugin. Uninstall it or upgrade it; the bundled copy is then used.") from e
+            raise
         feedback.pushInfo(f"{n} dead trees")
         styling.style_points(context, out)
         if prob:

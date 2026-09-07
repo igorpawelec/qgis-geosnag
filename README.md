@@ -15,17 +15,17 @@ A Processing provider for the [pygeosnag](https://github.com/igorpawelec/pygeosn
 
 1. Download the zip from the releases page (or build it with `python build_zip.py`, which copies pygeosnag, pygeoadaptels and pygeopalette from the sibling checkouts into `vendor/`).
 2. QGIS → Plugins → Manage and Install Plugins → Install from ZIP.
-3. The first run installs numba, scipy, scikit-learn, joblib, rasterio, fiona and shapely with `pip --target` into the plugin's own `libs/` folder (the log shows the exact command if that fails on a locked-down machine) and downloads the models of the chosen band mode (40–60 MB) into the user's cache, `~/.cache/pygeosnag/assets-v1`. A local models folder can be given instead, under *Advanced*; it is remembered.
+3. The first run installs numba, scipy, scikit-learn, joblib, rasterio, fiona and shapely with `pip --target` into the plugin's own `libs/` folder (the log shows the exact command if that fails on a locked-down machine) and downloads the models of the chosen band mode (60–145 MB) into the user's cache, `~/.cache/pygeosnag/assets-v2`. A local models folder can be given instead, under *Advanced*; it is remembered.
 
 Why `libs/` and not `pip --user`: the user site-packages folder is read by every Python of the same minor version on the machine, conda environments included, so a plugin that installs there can silently replace packages in environments that have nothing to do with QGIS. This plugin's dependencies stay inside the plugin.
 
 ## Use
 
-Processing toolbox → GeoSnag → *Detect dead trees*. Leave the band mode on *auto* for R, G, B, NIR or R, G, B in that order; choose *cir* for NIR, R, G. Keep the threshold at 0.5 on imagery like the training sites (Polish lowland pine and spruce, 0.25 m, leaf-on); on an unfamiliar scene the ranking is usually right and the scale is not, so lower it until the obvious snags appear. Add stand polygons with a stand age field if you have them: on seven test sites they removed a quarter of the points and, in a field review, only roads and fields.
+Processing toolbox → GeoSnag → *Detect dead trees*. Leave the band mode on *auto* for R, G, B, NIR or R, G, B in that order; choose *cir* for NIR, R, G. The threshold defaults to the models' operating point, 0.7: on a scene never seen in training recall stays flat from 0.6 to 0.8 while precision rises, so lower it for completeness and raise it for a cleaner map. On imagery unlike the training sites (Polish lowland pine and spruce, 0.25 m, leaf-on; another camera, species or decay stage) the ranking is usually right and the scale is not, so lower it until the obvious snags appear. Add stand polygons with a stand age field if you have them: on seven test sites they removed a quarter of the points and, in a field review, only roads and fields.
 
 Then *Grow crowns* with the orthophoto and the points.
 
-What to expect, measured with the site under test never seen in training and a hit counted within 1.5 m of a reference top: recall 63%, precision 33% against an incomplete reference and 55–75% after a field review; points a median 0.47 m from the top. RGB and CIR run about 15% below RGB+NIR.
+What to expect (models `assets-v2`: whole-crown labels, ten Polish sites, the site under test never seen in training, a hit within 1.5 m of a reference top): F1 0.61 for RGB+NIR, 0.55 for CIR and for RGB. On Białowieża, a 2018 flight never trained on, 61% of the trees dead by the flight at the operating point, with a precision floor of 26% against an ALS reference that is not the image's. The RGB+NIR and CIR models score spectral means standardised within the scene (a first pass over 16 tiles), which is what carries them to a flight with a different colour balance; the option sits under *Advanced* and should stay on auto. RGB+NIR points also carry `p_object`, a second, stricter score; a cut at 0.4 (*Advanced*) keeps about two thirds of the trees at half the false points.
 
 ## Testing without QGIS
 

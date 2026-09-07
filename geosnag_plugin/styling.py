@@ -125,13 +125,14 @@ class ScoredPostProcessor(QgsProcessingLayerPostProcessorInterface):
     """Adaptels coloured by their probability, half-transparent, thin outline.
 
     Four fixed classes rather than a data-driven ramp, so the colours mean
-    the same thing on every scene: below 0.3 faint, 0.3-0.5 yellow, 0.5-0.7
-    orange, 0.7 and up red. The layer is meant to be looked at over the
-    orthophoto, hence the transparency.
+    the same thing on every scene, set around the assets-v2 operating point
+    of 0.7: below 0.6 faint (only there when the threshold was lowered),
+    0.6-0.75 yellow, 0.75-0.9 orange, 0.9 and up red. The layer is meant to
+    be looked at over the orthophoto, hence the transparency.
     """
 
-    CLASSES = [(0.0, 0.3, "255,255,150,70", "< 0.3"), (0.3, 0.5, "255,220,0,140", "0.3 - 0.5"),
-               (0.5, 0.7, "255,140,0,170", "0.5 - 0.7"), (0.7, 1.0001, "230,0,0,200", ">= 0.7")]
+    CLASSES = [(0.0, 0.6, "255,255,150,70", "< 0.6"), (0.6, 0.75, "255,220,0,140", "0.6 - 0.75"),
+               (0.75, 0.9, "255,140,0,170", "0.75 - 0.9"), (0.9, 1.0001, "230,0,0,200", ">= 0.9")]
 
     def postProcessLayer(self, layer, context, feedback=None):
         if not _usable(layer):

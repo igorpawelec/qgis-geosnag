@@ -9,6 +9,9 @@ from ..deps import ensure_dependencies, manual_hint
 _WARMED = False
 MODES = ["auto (4 bands = RGB+NIR, 3 bands = RGB)", "rgbn (R, G, B, NIR)", "cir (NIR, R, G)", "rgb (R, G, B)"]
 MODE_KEYS = [None, "rgbn", "cir", "rgb"]
+SCENE_NORM_OPTIONS = ["auto (as the models were trained; the manifest decides)",
+                      "off (only for a model trained without it)"]
+SCENE_NORM_KEYS = ["auto", "off"]
 
 
 def warm_jit(feedback=None):
@@ -87,13 +90,34 @@ def set_assets_dir(path, feedback=None):
     return path
 
 
+def report_models(feedback, threshold):
+    """Which models a run will use and their operating point, with a note when
+    the chosen threshold differs from it (a local assets-v1 folder, say)."""
+    try:
+        from pygeosnag import assets
+        op = assets.operating_threshold(quiet=True)
+        feedback.pushInfo(f"Models: {assets.RELEASE}, operating point p >= {op:g}")
+        if abs(float(threshold) - op) > 1e-9:
+            feedback.pushInfo(f"Threshold {float(threshold):g} differs from the models' operating point {op:g}")
+    except Exception as exc:                      # detect fetches the manifest again and reports properly
+        feedback.pushInfo(f"Models: manifest not readable yet ({exc})")
+
+
+def _release():
+    try:
+        from pygeosnag import assets
+        return assets.RELEASE
+    except Exception:
+        return "assets-v2"
+
+
 def package_error(e):
     """A pygeosnag RuntimeError as a readable Processing error."""
     msg = str(e)
     if any(k in msg for k in ("could not download", "HTTP Error", "URLError", "urlopen", "Not Found")):
         msg += ("\n\nThe models could not be downloaded (the pygeosnag GitHub release is not published "
                 "yet, or the machine is offline). Copy manifest.json and the model files into "
-                f"{os.path.join(os.path.expanduser('~'), '.cache', 'pygeosnag', 'assets-v1')} -- that is "
+                f"{os.path.join(os.path.expanduser('~'), '.cache', 'pygeosnag', _release())} -- that is "
                 "where pygeosnag looks without any setting -- or open Advanced and set 'Local models "
                 "folder' to the folder that holds them; it is remembered for later runs.")
     return QgsProcessingException(msg)
