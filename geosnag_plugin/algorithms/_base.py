@@ -95,8 +95,9 @@ def report_models(feedback, threshold):
     the chosen threshold differs from it (a local assets-v1 folder, say)."""
     try:
         from pygeosnag import assets
-        op = assets.operating_threshold(quiet=True)
-        feedback.pushInfo(f"Models: {assets.RELEASE}, operating point p >= {op:g}")
+        man = assets.manifest(quiet=True)
+        op = float(man.get("operating_point", {}).get("threshold", 0.5))
+        feedback.pushInfo(f"Models: {man.get('release', assets.RELEASE)} from {assets.assets_dir()}, operating point p >= {op:g}")
         if abs(float(threshold) - op) > 1e-9:
             feedback.pushInfo(f"Threshold {float(threshold):g} differs from the models' operating point {op:g}")
     except Exception as exc:                      # detect fetches the manifest again and reports properly
