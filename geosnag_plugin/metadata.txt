@@ -2,7 +2,7 @@
 name=GeoSnag
 qgisMinimumVersion=3.28
 description=Standing dead trees on aerial orthophotos: one point per tree, then crowns grown from the points.
-version=0.4.7
+version=0.4.8
 author=Igor Pawelec
 email=igor.pawelec@urk.edu.pl
 about=QGIS Processing provider for the pygeosnag Python package. "Detect dead trees" takes an RGB+NIR, CIR or RGB orthophoto and writes one point per standing dead tree with a confidence (adaptel micro-segmentation, a random forest trained with whole-crown labels on ten Polish forest sites, spectral means standardised within the scene, an optional stand mask, an optional cut on the object score). "Grow crowns" grows the points into crown polygons with pygeoadaptels' seeded region growing and a crown recipe. The algorithms stay in the packages; this plugin is glue. pygeosnag, pygeoadaptels and pygeopalette are bundled; numba, scipy, scikit-learn, joblib, rasterio, fiona and shapely are installed into the plugin's own libs folder on first run. The models are downloaded on first use from the pygeosnag GitHub release.
@@ -14,7 +14,13 @@ category=Analysis
 tags=raster,dead trees,snags,forestry,remote sensing,orthophoto,segmentation,random forest,region growing
 experimental=True
 deprecated=False
-changelog=0.4.7
+changelog=0.4.8
+    Grow crowns works tile by tile around the points (pygeosnag 0.3.4): no
+    temporary CIELAB file, memory bounded by one tile, progress per tile,
+    cancel works. A 796-megapixel orthophoto that failed writing the
+    temporary file on the system drive now runs through. Bundles
+    pygeosnag 0.3.4, pygeoadaptels 0.10.4.
+    0.4.7
     Results are styled by Processing itself from QML files shipped with the
     plugin (RenderingStyles), not by plugin post-processors running on the
     GUI thread when the task completes -- where QGIS crashed with an access

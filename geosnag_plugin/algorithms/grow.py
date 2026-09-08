@@ -15,7 +15,7 @@ from qgis.core import (
 )
 
 from .. import styling
-from ._base import MODE_KEYS, MODES, advanced, package_error, require_packages, source_path, warm_jit
+from ._base import progress_adapter, MODE_KEYS, MODES, advanced, package_error, require_packages, source_path, warm_jit
 
 
 class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
@@ -102,15 +102,26 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
             raise QgsProcessingException("The output must be a GeoPackage (.gpkg): pygeosnag writes it directly.")
         labels = self.parameterAsOutputLayer(parameters, self.LABELS, context) or None
         from pygeosnag.grow import grow_crowns
-        feedback.pushInfo("Converting to CIELAB and growing the points; a minute or two.")
+        feedback.pushInfo("Growing the points tile by tile (CIELAB in memory, no temporary file).")
         try:
-            grow_crowns(source_path(layer), pts.source(), out, mode=mode, bands=bands, labels_out=labels,
-                        max_cost=self.parameterAsDouble(parameters, self.MAX_COST, context),
-                        band_weights=weights,
-                        max_radius=self.parameterAsInt(parameters, self.MAX_RADIUS, context),
-                        fill_holes=self.parameterAsBool(parameters, self.FILL_HOLES, context), quiet=True)
-        except (RuntimeError, ValueError, OSError) as e:
+            n = grow_crowns(source_path(layer), pts.source(), out, mode=mode, bands=bands, labels_out=labels,
+                            max_cost=self.parameterAsDouble(parameters, self.MAX_COST, context),
+                            band_weights=weights,
+                            max_radius=self.parameterAsInt(parameters, self.MAX_RADIUS, context),
+                            fill_holes=self.parameterAsBool(parameters, self.FILL_HOLES, context),
+                            progress=progress_adapter(feedback), quiet=True)
+        except RuntimeError as e:
+            if "cancelled" in str(e):
+                return {}
             raise package_error(e)
+        except (ValueError, OSError) as e:
+            raise package_error(e)
+        except TypeError as e:
+            if "progress" in str(e) or "tile" in str(e):
+                raise QgsProcessingException(
+                    "An older pygeosnag (< 0.3.4) shadows the copy bundled with the plugin; see the Running: line.") from e
+            raise
+        feedback.pushInfo(f"{n} crowns")
         styling.style_polygons(context, out)
         result = {self.OUTPUT: out}
         if labels:
