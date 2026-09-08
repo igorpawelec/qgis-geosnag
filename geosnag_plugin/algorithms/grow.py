@@ -1,5 +1,5 @@
-"""Grow crowns -- wraps pygeosnag.grow_crowns (pygeoadaptels' seeded region
-growing with the crown recipe)."""
+"""Grow crowns -- wraps pygeosnag.grow_crowns (seeded region growing with the
+crown recipe: since pygeosnag 0.4.0 the within-reach kernel on NDVI + L)."""
 from qgis.core import (
     QgsProcessing,
     QgsProcessingAlgorithm,
@@ -17,6 +17,16 @@ from qgis.core import (
 from .. import styling
 from ._base import progress_adapter, MODE_KEYS, MODES, advanced, package_error, require_packages, source_path, warm_jit
 
+SPACES = ["auto (NDVI + lightness with a NIR band, else weighted CIELAB)",
+          "ndvi_L (100 x NDVI and CIELAB L; needs a NIR band; tolerance 20)",
+          "lab_w (CIELAB with a* weighted 2.5, the recipe before 0.4.9; tolerance 15)",
+          "lab (CIELAB, equal weights; tolerance 20)",
+          "raw (the bands as they are; tolerance 35, not benchmarked)"]
+SPACE_KEYS = ["auto", "ndvi_L", "lab_w", "lab", "raw"]
+RULES = ["reach (a pixel goes to the seed within the radius and tolerance with the lowest path cost)",
+         "partition (one global partition with every seed, cut afterwards; the behaviour before 0.4.9)"]
+RULE_KEYS = ["reach", "partition"]
+
 
 class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
     INPUT = "INPUT"
@@ -25,6 +35,8 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
     # advanced
     MODE = "MODE"
     BANDS = "BANDS"
+    SPACE = "SPACE"
+    RULE = "RULE"
     MAX_COST = "MAX_COST"
     MAX_RADIUS = "MAX_RADIUS"
     WEIGHTS = "WEIGHTS"
@@ -49,13 +61,19 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
     def shortHelpString(self):
         return (
             "<p>Grow the dead-tree points into crown polygons: every point grows into the "
-            "region that looks like the pixel it sits on, on CIELAB, with a spectral tolerance "
-            "and a radius cap (pygeoadaptels' seeded region growing, inverse OBIA).</p>"
-            "<p>The recipe under Advanced was worked out on a spruce plot with bleached snags: "
-            "a* weighted 2.5 (the red-green axis separates grey-white crowns from green "
-            "canopy), Delta-E tolerance 15, at most 20 px (5 m at 0.25 m) from the seed, holes "
-            "inside a crown filled. Points can also come from anywhere else &mdash; a click, a "
-            "field survey &mdash; as long as they sit on the crown.</p>")
+            "pixels within a radius that stay within a spectral tolerance of the pixel it sits "
+            "on, competing with the other points (pygeosnag's within-reach seeded region "
+            "growing, inverse OBIA).</p>"
+            "<p>The default recipe (pygeosnag 0.4.0) grows on 100 x NDVI and CIELAB lightness "
+            "with a tolerance of 20, at most 20 px (5 m at 0.25 m) from the seed, holes inside "
+            "a crown filled; a raster without a NIR band falls back to CIELAB with a* weighted "
+            "2.5 and a tolerance of 15 (the recipe before 0.4.9). Benchmarked on 1200 verified "
+            "crowns of 8 Polish sites with the detector's own points as competitors: median IoU "
+            "0.65, 72% of the crowns above 0.5, against 0.53 and 54% for the previous recipe. "
+            "Points can also come from anywhere else &mdash; a click, a field survey &mdash; "
+            "as long as they sit on the crown.</p>"
+            "<p>Under Advanced: the feature space and the assignment rule; a tolerance of 0 and "
+            "empty weights mean the values the chosen space was benchmarked at.</p>")
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT, "Orthophoto"))
@@ -64,14 +82,17 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(advanced(QgsProcessingParameterEnum(self.MODE, "Band mode", options=MODES, defaultValue=0)))
         self.addParameter(advanced(QgsProcessingParameterString(
             self.BANDS, "Band roles in raster order (empty = default order)", defaultValue="", optional=True)))
+        self.addParameter(advanced(QgsProcessingParameterEnum(self.SPACE, "Feature space", options=SPACES, defaultValue=0)))
+        self.addParameter(advanced(QgsProcessingParameterEnum(self.RULE, "Assignment rule", options=RULES, defaultValue=0)))
         self.addParameter(advanced(QgsProcessingParameterNumber(
-            self.MAX_COST, "Spectral tolerance (Delta-E)", QgsProcessingParameterNumber.Double,
-            defaultValue=15.0, minValue=1.0)))
+            self.MAX_COST, "Spectral tolerance (0 = the tolerance of the chosen space)",
+            QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0)))
         self.addParameter(advanced(QgsProcessingParameterNumber(
             self.MAX_RADIUS, "Maximum radius from the seed (px)", QgsProcessingParameterNumber.Integer,
             defaultValue=20, minValue=2)))
         self.addParameter(advanced(QgsProcessingParameterString(
-            self.WEIGHTS, "Band weights L,a,b", defaultValue="0.5,2.5,1.0")))
+            self.WEIGHTS, "Band weights, one per feature (empty = the weights of the chosen space)",
+            defaultValue="", optional=True)))
         self.addParameter(advanced(QgsProcessingParameterBoolean(
             self.FILL_HOLES, "Fill holes inside crowns", defaultValue=True)))
         self.addParameter(QgsProcessingParameterVectorDestination(
@@ -91,23 +112,30 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
         mode = MODE_KEYS[self.parameterAsEnum(parameters, self.MODE, context)]
         bands_s = (self.parameterAsString(parameters, self.BANDS, context) or "").strip()
         bands = tuple(b.strip() for b in bands_s.split(",")) if bands_s else None
-        try:
-            weights = tuple(float(x) for x in self.parameterAsString(parameters, self.WEIGHTS, context).split(","))
-            if len(weights) != 3:
-                raise ValueError
-        except ValueError:
-            raise QgsProcessingException("Band weights must be three numbers, e.g. 0.5,2.5,1.0")
+        space = SPACE_KEYS[self.parameterAsEnum(parameters, self.SPACE, context)]
+        rule = RULE_KEYS[self.parameterAsEnum(parameters, self.RULE, context)]
+        max_cost = self.parameterAsDouble(parameters, self.MAX_COST, context)
+        max_cost = max_cost if max_cost > 0 else None          # None = the space's own tolerance
+        weights_s = (self.parameterAsString(parameters, self.WEIGHTS, context) or "").strip()
+        weights = None
+        if weights_s:
+            try:
+                weights = tuple(float(x) for x in weights_s.split(","))
+            except ValueError:
+                raise QgsProcessingException(
+                    "Band weights must be numbers separated by commas, one per feature "
+                    "(e.g. 0.5,2.5,1.0 for CIELAB, 1,1 for NDVI + L), or empty for the space's own weights")
+        radius = self.parameterAsInt(parameters, self.MAX_RADIUS, context)
         out = self.parameterAsOutputLayer(parameters, self.OUTPUT, context)
         if not out.lower().endswith(".gpkg"):
             raise QgsProcessingException("The output must be a GeoPackage (.gpkg): pygeosnag writes it directly.")
         labels = self.parameterAsOutputLayer(parameters, self.LABELS, context) or None
         from pygeosnag.grow import grow_crowns
-        feedback.pushInfo("Growing the points tile by tile (CIELAB in memory, no temporary file).")
+        feedback.pushInfo(f"Growing the points tile by tile: feature space {space}, rule {rule}, tolerance "
+                          f"{'of the space' if max_cost is None else max_cost}, radius {radius} px.")
         try:
             n = grow_crowns(source_path(layer), pts.source(), out, mode=mode, bands=bands, labels_out=labels,
-                            max_cost=self.parameterAsDouble(parameters, self.MAX_COST, context),
-                            band_weights=weights,
-                            max_radius=self.parameterAsInt(parameters, self.MAX_RADIUS, context),
+                            space=space, rule=rule, max_cost=max_cost, band_weights=weights, max_radius=radius,
                             fill_holes=self.parameterAsBool(parameters, self.FILL_HOLES, context),
                             progress=progress_adapter(feedback), quiet=True)
         except RuntimeError as e:
@@ -117,9 +145,9 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
         except (ValueError, OSError) as e:
             raise package_error(e)
         except TypeError as e:
-            if "progress" in str(e) or "tile" in str(e):
+            if any(k in str(e) for k in ("progress", "tile", "space", "rule")):
                 raise QgsProcessingException(
-                    "An older pygeosnag (< 0.3.4) shadows the copy bundled with the plugin; see the Running: line.") from e
+                    "An older pygeosnag (< 0.4.0) shadows the copy bundled with the plugin; see the Running: line.") from e
             raise
         feedback.pushInfo(f"{n} crowns")
         styling.style_polygons(context, out)

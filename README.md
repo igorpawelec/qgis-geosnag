@@ -9,7 +9,7 @@
 A Processing provider for the [pygeosnag](https://github.com/igorpawelec/pygeosnag) package. The algorithms live in the package; this plugin is glue. Two algorithms:
 
 - **Detect dead trees** — orthophoto in (RGB+NIR, CIR or RGB), one point per standing dead tree out, with a confidence `p`. Five things on the dialog: the orthophoto, the band mode, the threshold, optional stand polygons, the output.
-- **Grow crowns** — the points plus the orthophoto in, crown polygons out: pygeoadaptels' seeded region growing (inverse OBIA) on CIELAB with a crown recipe. The points can also come from a click or a field survey.
+- **Grow crowns** — the points plus the orthophoto in, crown polygons out: seeded region growing (inverse OBIA) on 100·NDVI and CIELAB lightness with pygeosnag's within-reach kernel, tolerance and radius from a benchmark on 1200 verified crowns (median IoU 0.65). Weighted CIELAB when the raster has no NIR band. The points can also come from a click or a field survey.
 
 ## Install
 
