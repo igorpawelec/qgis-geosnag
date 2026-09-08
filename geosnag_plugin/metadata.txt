@@ -4,7 +4,7 @@ qgisMinimumVersion=3.28
 qgisMaximumVersion=4.99
 supportsQt6=True
 description=Standing dead trees on aerial orthophotos: one point per tree, then crowns grown from the points.
-version=0.4.12
+version=0.4.13
 author=Igor Pawelec
 email=igor.pawelec@urk.edu.pl
 about=QGIS Processing provider for the pygeosnag Python package. "Detect dead trees" takes an RGB+NIR, CIR or RGB orthophoto and writes one point per standing dead tree with a confidence (adaptel micro-segmentation, a random forest trained with whole-crown labels on ten Polish forest sites, spectral means standardised within the scene, an optional stand mask, an optional cut on the object score). "Grow crowns" grows the points into crown polygons with seeded region growing on NDVI and lightness (a within-reach kernel, tolerance and radius from a benchmark on 1200 verified crowns). The algorithms stay in the packages; this plugin is glue. pygeosnag, pygeoadaptels and pygeopalette are bundled; numba, scipy, scikit-learn, joblib, rasterio, fiona and shapely are installed into the plugin's own libs folder on first run. The models are downloaded on first use from the pygeosnag GitHub release.
@@ -16,7 +16,14 @@ category=Analysis
 tags=raster,dead trees,snags,forestry,remote sensing,orthophoto,segmentation,random forest,region growing
 experimental=True
 deprecated=False
-changelog=0.4.12
+changelog=0.4.13
+    Rasters without a NIR band grow crowns exactly as before 0.4.9 again:
+    the within-reach rule was applied to the CIELAB fallback in 0.4.9 without
+    a benchmark and over-grew dark RGB scenes into 20-px discs (SNP_21:
+    median crown 37 m2 against 14 m2 before). pygeosnag 0.4.3 rule "auto"
+    (new default in Advanced) pairs reach with NDVI + lightness and the
+    partition with CIELAB. Bundles pygeosnag 0.4.3.
+    0.4.12
     Declares qgisMaximumVersion 4.99 and supportsQt6: without them QGIS 4
     lists the plugin as incompatible (designed for 3.28-3.99) at the next
     start, although it ran fine when installed from the zip. No code change.

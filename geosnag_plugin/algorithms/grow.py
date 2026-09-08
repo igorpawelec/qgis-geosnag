@@ -23,9 +23,10 @@ SPACES = ["auto (NDVI + lightness with a NIR band, else weighted CIELAB)",
           "lab (CIELAB, equal weights; tolerance 20)",
           "raw (the bands as they are; tolerance 35, not benchmarked)"]
 SPACE_KEYS = ["auto", "ndvi_L", "lab_w", "lab", "raw"]
-RULES = ["reach (a pixel goes to the seed within the radius and tolerance with the lowest path cost)",
+RULES = ["auto (reach on NDVI + lightness, partition on CIELAB and raw: the pairing each was benchmarked in)",
+         "reach (a pixel goes to the seed within the radius and tolerance with the lowest path cost)",
          "partition (one global partition with every seed, cut afterwards; the behaviour before 0.4.9)"]
-RULE_KEYS = ["reach", "partition"]
+RULE_KEYS = ["auto", "reach", "partition"]
 
 
 class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
@@ -68,8 +69,8 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
             "<p>The default recipe (pygeosnag 0.4.1) grows on 100 x NDVI and CIELAB lightness "
             "with a tolerance of 28 at the seed falling to 12 at the radius, at most 20 px "
             "(5 m at 0.25 m) from the seed, holes inside a crown filled; a raster without a "
-            "NIR band falls back to CIELAB with a* weighted 2.5 and a flat tolerance of 15 (the "
-            "recipe before 0.4.9). Benchmarked on 1200 verified crowns of 8 Polish sites with "
+            "NIR band falls back to CIELAB with a* weighted 2.5, a flat tolerance of 15 and the "
+            "global partition rule, i.e. exactly the recipe before 0.4.9. Benchmarked on 1200 verified crowns of 8 Polish sites with "
             "the detector's own points as competitors: median IoU 0.70, 79% of the crowns above "
             "0.5, against 0.53 and 54% for the previous recipe; on dense bark-beetle clusters "
             "(Gizycko, 2000 crowns) 0.56 against 0.34. Points can also come from anywhere else "
