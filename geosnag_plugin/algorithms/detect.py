@@ -22,8 +22,9 @@ from qgis.core import (
 )
 
 from .. import styling
-from ._base import (MODE_KEYS, MODES, SCENE_NORM_KEYS, SCENE_NORM_OPTIONS, advanced, package_error,
-                    progress_adapter, report_models, require_packages, set_assets_dir, source_path, warm_jit)
+from ._base import (MODE_KEYS, MODES, RADIOMETRY_KEYS, RADIOMETRY_OPTIONS, SCENE_NORM_KEYS, SCENE_NORM_OPTIONS,
+                    advanced, package_error, progress_adapter, report_models, require_packages, set_assets_dir,
+                    source_path, warm_jit)
 
 
 def _split_source(layer):
@@ -59,6 +60,7 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
     OBJECT_THRESHOLD = "OBJECT_THRESHOLD"
     SCENE_NORM = "SCENE_NORM"
     NORM_TILES = "NORM_TILES"
+    RADIOMETRY = "RADIOMETRY"
 
     def name(self):
         return "detect"
@@ -98,6 +100,12 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             "scene's medians and spreads before any tile is scored. This is what lets a model "
             "trained on one set of flights read a flight with a different colour balance. Leave "
             "it on auto; the models' manifest decides.</p>"
+            "<p><b>Radiometry.</b> The per-band 2nd and 98th percentiles of the sampled tiles "
+            "are compared with those of the training orthophotos; a hazy scene (dark end more "
+            "than 15 DN above the reference) or a flat one (range below 0.7 of the reference) is "
+            "mapped linearly onto the training range before segmentation. On such scenes the "
+            "models otherwise see nothing at all (highest probability 0.2); a scene within the "
+            "corridor is left untouched. Leave it on auto; the log says what was measured.</p>"
             "<p><b>Object score.</b> RGB+NIR points also carry <code>p_object</code>, a second, "
             "stricter score from a forest that looks at the whole merged object. Dropping points "
             "below 0.4 (Advanced) keeps about two thirds of the trees at half the false points.</p>"
@@ -162,6 +170,9 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(advanced(QgsProcessingParameterNumber(
             self.NORM_TILES, "Scene normalisation: tiles sampled for the scene statistics",
             QgsProcessingParameterNumber.Integer, defaultValue=16, minValue=1)))
+        self.addParameter(advanced(QgsProcessingParameterEnum(
+            self.RADIOMETRY, "Radiometry: map a hazy or flat scene onto the training range",
+            options=RADIOMETRY_OPTIONS, defaultValue=0)))
         self.addParameter(advanced(QgsProcessingParameterFile(
             self.ASSETS, "Local models folder (remembered; empty = last used or download)",
             behavior=QgsProcessingParameterFile.Folder, optional=True)))
@@ -199,12 +210,13 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         object_threshold = self.parameterAsDouble(parameters, self.OBJECT_THRESHOLD, context) or None
         scene_norm = SCENE_NORM_KEYS[self.parameterAsEnum(parameters, self.SCENE_NORM, context)]
         norm_tiles = self.parameterAsInt(parameters, self.NORM_TILES, context)
+        radiometry = RADIOMETRY_KEYS[self.parameterAsEnum(parameters, self.RADIOMETRY, context)]
         report_models(feedback, threshold)
         from pygeosnag.detect import detect
         try:
             n = detect(source_path(layer), out, mode=mode, bands=bands,
                        threshold=threshold, object_threshold=object_threshold,
-                       scene_norm=scene_norm, norm_tiles=norm_tiles,
+                       scene_norm=scene_norm, norm_tiles=norm_tiles, radiometry=radiometry,
                        suppress_m=self.parameterAsDouble(parameters, self.SUPPRESS, context),
                        stands=stands, stand_layer=stand_layer,
                        stand_age=self.parameterAsDouble(parameters, self.STAND_AGE, context),
@@ -222,9 +234,9 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         except (ValueError, OSError) as e:
             raise package_error(e)
         except TypeError as e:
-            if "scene_norm" in str(e) or "object_threshold" in str(e):
+            if "scene_norm" in str(e) or "object_threshold" in str(e) or "radiometry" in str(e):
                 raise QgsProcessingException(
-                    "An older pygeosnag (< 0.3.0) is installed in QGIS's Python and shadows the copy bundled "
+                    "An older pygeosnag (< 0.3.2) is installed in QGIS's Python and shadows the copy bundled "
                     "with the plugin. Uninstall it or upgrade it; the bundled copy is then used.") from e
             raise
         feedback.pushInfo(f"{n} dead trees")
