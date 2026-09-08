@@ -1,6 +1,7 @@
 [general]
 name=GeoSnag
 qgisMinimumVersion=3.28
+supportsQt6=True
 description=Standing dead trees on aerial orthophotos: one point per tree, then crowns grown from the points.
 version=0.4.11
 author=Igor Pawelec
