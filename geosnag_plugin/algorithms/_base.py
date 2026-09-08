@@ -13,10 +13,10 @@ MODE_KEYS = [None, "rgbn", "cir", "rgb"]
 SCENE_NORM_OPTIONS = ["auto (as the models were trained; the manifest decides)",
                       "off (only for a model trained without it)"]
 SCENE_NORM_KEYS = ["auto", "off"]
-RADIOMETRY_OPTIONS = ["auto (only a hazy or flat scene is mapped onto the training range)",
-                      "match (always map the per-band 2-98 percentiles onto the training range)",
-                      "off"]
-RADIOMETRY_KEYS = ["auto", "match", "off"]
+RADIOMETRY_OPTIONS = ["off (default; run this first)",
+                      "auto (rescue: a hazy or flat scene is mapped onto the training range)",
+                      "match (always map the per-band 2-98 percentiles onto the training range)"]
+RADIOMETRY_KEYS = ["off", "auto", "match"]
 
 
 def warm_jit(feedback=None):

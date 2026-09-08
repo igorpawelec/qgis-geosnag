@@ -100,12 +100,13 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             "scene's medians and spreads before any tile is scored. This is what lets a model "
             "trained on one set of flights read a flight with a different colour balance. Leave "
             "it on auto; the models' manifest decides.</p>"
-            "<p><b>Radiometry.</b> The per-band 2nd and 98th percentiles of the sampled tiles "
-            "are compared with those of the training orthophotos; a hazy scene (dark end more "
-            "than 15 DN above the reference) or a flat one (range below 0.7 of the reference) is "
-            "mapped linearly onto the training range before segmentation. On such scenes the "
-            "models otherwise see nothing at all (highest probability 0.2); a scene within the "
-            "corridor is left untouched. Leave it on auto; the log says what was measured.</p>"
+            "<p><b>Radiometry.</b> A rescue, off by default. With <i>auto</i> the per-band 2nd and "
+            "98th percentiles of the sampled tiles are compared with those of the training "
+            "orthophotos and a hazy or flat scene is mapped onto the training range before "
+            "segmentation. On some scenes the models see nothing at all without it; on others it "
+            "removes most detections (mapping the bands separately changes the band ratios). Run "
+            "with it off first; switch to auto only on a scene that plainly holds dead trees and "
+            "returned nothing. The log says what was measured.</p>"
             "<p><b>Object score.</b> RGB+NIR points also carry <code>p_object</code>, a second, "
             "stricter score from a forest that looks at the whole merged object. Dropping points "
             "below 0.4 (Advanced) keeps about two thirds of the trees at half the false points.</p>"
@@ -171,7 +172,7 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             self.NORM_TILES, "Scene normalisation: tiles sampled for the scene statistics",
             QgsProcessingParameterNumber.Integer, defaultValue=16, minValue=1)))
         self.addParameter(advanced(QgsProcessingParameterEnum(
-            self.RADIOMETRY, "Radiometry: map a hazy or flat scene onto the training range",
+            self.RADIOMETRY, "Radiometry (rescue for a scene that returned nothing; off first)",
             options=RADIOMETRY_OPTIONS, defaultValue=0)))
         self.addParameter(advanced(QgsProcessingParameterFile(
             self.ASSETS, "Local models folder (remembered; empty = last used or download)",
