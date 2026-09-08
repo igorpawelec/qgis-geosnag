@@ -2,7 +2,7 @@
 name=GeoSnag
 qgisMinimumVersion=3.28
 description=Standing dead trees on aerial orthophotos: one point per tree, then crowns grown from the points.
-version=0.4.9
+version=0.4.10
 author=Igor Pawelec
 email=igor.pawelec@urk.edu.pl
 about=QGIS Processing provider for the pygeosnag Python package. "Detect dead trees" takes an RGB+NIR, CIR or RGB orthophoto and writes one point per standing dead tree with a confidence (adaptel micro-segmentation, a random forest trained with whole-crown labels on ten Polish forest sites, spectral means standardised within the scene, an optional stand mask, an optional cut on the object score). "Grow crowns" grows the points into crown polygons with seeded region growing on NDVI and lightness (a within-reach kernel, tolerance and radius from a benchmark on 1200 verified crowns). The algorithms stay in the packages; this plugin is glue. pygeosnag, pygeoadaptels and pygeopalette are bundled; numba, scipy, scikit-learn, joblib, rasterio, fiona and shapely are installed into the plugin's own libs folder on first run. The models are downloaded on first use from the pygeosnag GitHub release.
@@ -14,7 +14,16 @@ category=Analysis
 tags=raster,dead trees,snags,forestry,remote sensing,orthophoto,segmentation,random forest,region growing
 experimental=True
 deprecated=False
-changelog=0.4.9
+changelog=0.4.10
+    Grow crowns: the tolerance now tapers with the distance from the seed
+    (pygeosnag 0.4.1): 28 at the seed, 12 at the radius on NDVI + lightness.
+    A flat tolerance could not serve both dense bark-beetle clusters (their
+    bleached crowns want 25-30 near the seed) and sparse stands (anything
+    above 15 at the radius spills into shadow). On 1200 verified crowns of
+    8 sites: median IoU 0.70, 79% above 0.5 (0.4.9: 0.65, 72%); on the
+    Gizycko clusters 0.56 (0.4.9: 0.48). New Advanced field: tolerance at
+    the radius. Bundles pygeosnag 0.4.1.
+    0.4.9
     Grow crowns gets a new default recipe (pygeosnag 0.4.0): the points grow
     on 100 x NDVI and CIELAB lightness (tolerance 20; weighted CIELAB with
     no NIR band) with pygeosnag's within-reach kernel, where a pixel goes to

@@ -18,7 +18,7 @@ from .. import styling
 from ._base import progress_adapter, MODE_KEYS, MODES, advanced, package_error, require_packages, source_path, warm_jit
 
 SPACES = ["auto (NDVI + lightness with a NIR band, else weighted CIELAB)",
-          "ndvi_L (100 x NDVI and CIELAB L; needs a NIR band; tolerance 20)",
+          "ndvi_L (100 x NDVI and CIELAB L; needs a NIR band; tolerance 28 at the seed, 12 at the radius)",
           "lab_w (CIELAB with a* weighted 2.5, the recipe before 0.4.9; tolerance 15)",
           "lab (CIELAB, equal weights; tolerance 20)",
           "raw (the bands as they are; tolerance 35, not benchmarked)"]
@@ -38,6 +38,7 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
     SPACE = "SPACE"
     RULE = "RULE"
     MAX_COST = "MAX_COST"
+    MAX_COST_R = "MAX_COST_R"
     MAX_RADIUS = "MAX_RADIUS"
     WEIGHTS = "WEIGHTS"
     FILL_HOLES = "FILL_HOLES"
@@ -64,16 +65,19 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
             "pixels within a radius that stay within a spectral tolerance of the pixel it sits "
             "on, competing with the other points (pygeosnag's within-reach seeded region "
             "growing, inverse OBIA).</p>"
-            "<p>The default recipe (pygeosnag 0.4.0) grows on 100 x NDVI and CIELAB lightness "
-            "with a tolerance of 20, at most 20 px (5 m at 0.25 m) from the seed, holes inside "
-            "a crown filled; a raster without a NIR band falls back to CIELAB with a* weighted "
-            "2.5 and a tolerance of 15 (the recipe before 0.4.9). Benchmarked on 1200 verified "
-            "crowns of 8 Polish sites with the detector's own points as competitors: median IoU "
-            "0.65, 72% of the crowns above 0.5, against 0.53 and 54% for the previous recipe. "
-            "Points can also come from anywhere else &mdash; a click, a field survey &mdash; "
-            "as long as they sit on the crown.</p>"
+            "<p>The default recipe (pygeosnag 0.4.1) grows on 100 x NDVI and CIELAB lightness "
+            "with a tolerance of 28 at the seed falling to 12 at the radius, at most 20 px "
+            "(5 m at 0.25 m) from the seed, holes inside a crown filled; a raster without a "
+            "NIR band falls back to CIELAB with a* weighted 2.5 and a flat tolerance of 15 (the "
+            "recipe before 0.4.9). Benchmarked on 1200 verified crowns of 8 Polish sites with "
+            "the detector's own points as competitors: median IoU 0.70, 79% of the crowns above "
+            "0.5, against 0.53 and 54% for the previous recipe; on dense bark-beetle clusters "
+            "(Gizycko, 2000 crowns) 0.56 against 0.34. Points can also come from anywhere else "
+            "&mdash; a click, a field survey &mdash; as long as they sit on the crown.</p>"
             "<p>Under Advanced: the feature space and the assignment rule; a tolerance of 0 and "
-            "empty weights mean the values the chosen space was benchmarked at.</p>")
+            "empty weights mean the values the chosen space was benchmarked at. For very dense "
+            "clusters a higher tolerance at the seed (32) grows fuller crowns at the price of "
+            "some spill in sparse stands.</p>")
 
     def initAlgorithm(self, config=None):
         self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT, "Orthophoto"))
@@ -85,7 +89,10 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(advanced(QgsProcessingParameterEnum(self.SPACE, "Feature space", options=SPACES, defaultValue=0)))
         self.addParameter(advanced(QgsProcessingParameterEnum(self.RULE, "Assignment rule", options=RULES, defaultValue=0)))
         self.addParameter(advanced(QgsProcessingParameterNumber(
-            self.MAX_COST, "Spectral tolerance (0 = the tolerance of the chosen space)",
+            self.MAX_COST, "Spectral tolerance at the seed (0 = the value of the chosen space)",
+            QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0)))
+        self.addParameter(advanced(QgsProcessingParameterNumber(
+            self.MAX_COST_R, "Spectral tolerance at the radius (0 = the seed tolerance minus the taper of the space; ndvi_L 12)",
             QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0)))
         self.addParameter(advanced(QgsProcessingParameterNumber(
             self.MAX_RADIUS, "Maximum radius from the seed (px)", QgsProcessingParameterNumber.Integer,
@@ -116,6 +123,21 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
         rule = RULE_KEYS[self.parameterAsEnum(parameters, self.RULE, context)]
         max_cost = self.parameterAsDouble(parameters, self.MAX_COST, context)
         max_cost = max_cost if max_cost > 0 else None          # None = the space's own tolerance
+        cost_r = self.parameterAsDouble(parameters, self.MAX_COST_R, context)
+        taper = None                                           # None = the space's own taper
+        if cost_r > 0:
+            seed_cost = max_cost
+            if seed_cost is None:
+                try:
+                    from pygeosnag.grow import SPACES_REACH
+                    seed_cost = SPACES_REACH.get(space, {}).get("max_cost")
+                except ImportError:
+                    seed_cost = None
+            if seed_cost is None:
+                raise QgsProcessingException(
+                    "Set the tolerance at the seed as well: with feature space auto the seed tolerance is only "
+                    "known once the raster is read.")
+            taper = max(0.0, float(seed_cost) - cost_r)
         weights_s = (self.parameterAsString(parameters, self.WEIGHTS, context) or "").strip()
         weights = None
         if weights_s:
@@ -132,11 +154,12 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
         labels = self.parameterAsOutputLayer(parameters, self.LABELS, context) or None
         from pygeosnag.grow import grow_crowns
         feedback.pushInfo(f"Growing the points tile by tile: feature space {space}, rule {rule}, tolerance "
-                          f"{'of the space' if max_cost is None else max_cost}, radius {radius} px.")
+                          f"{'of the space' if max_cost is None else max_cost}"
+                          f"{'' if taper is None else f' at the seed, {cost_r:g} at the radius'}, radius {radius} px.")
         try:
             n = grow_crowns(source_path(layer), pts.source(), out, mode=mode, bands=bands, labels_out=labels,
-                            space=space, rule=rule, max_cost=max_cost, band_weights=weights, max_radius=radius,
-                            fill_holes=self.parameterAsBool(parameters, self.FILL_HOLES, context),
+                            space=space, rule=rule, max_cost=max_cost, taper=taper, band_weights=weights,
+                            max_radius=radius, fill_holes=self.parameterAsBool(parameters, self.FILL_HOLES, context),
                             progress=progress_adapter(feedback), quiet=True)
         except RuntimeError as e:
             if "cancelled" in str(e):
@@ -145,9 +168,9 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
         except (ValueError, OSError) as e:
             raise package_error(e)
         except TypeError as e:
-            if any(k in str(e) for k in ("progress", "tile", "space", "rule")):
+            if any(k in str(e) for k in ("progress", "tile", "space", "rule", "taper")):
                 raise QgsProcessingException(
-                    "An older pygeosnag (< 0.4.0) shadows the copy bundled with the plugin; see the Running: line.") from e
+                    "An older pygeosnag (< 0.4.1) shadows the copy bundled with the plugin; see the Running: line.") from e
             raise
         feedback.pushInfo(f"{n} crowns")
         styling.style_polygons(context, out)
