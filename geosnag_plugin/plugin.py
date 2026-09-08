@@ -27,6 +27,11 @@ class Plugin:
             pass
         self.provider = GeoSnagProvider()
         QgsApplication.processingRegistry().addProvider(self.provider)
+        try:
+            from . import styling
+            styling.register_output_styles()
+        except Exception:
+            pass
 
     def unload(self):
         if self.provider is not None:

@@ -45,6 +45,10 @@ def test_styling_and_deps_helpers():
     from geosnag_plugin import deps, styling, vendor_loader
     assert callable(styling.style_points) and callable(styling.style_polygons)
     assert callable(styling.style_stretched_raster)
+    import os
+    for outputs in styling.OUTPUT_STYLES.values():
+        for qml in outputs.values():
+            assert os.path.exists(os.path.join(styling.STYLES_DIR, qml)), qml
     specs = deps._install_specs()
     assert "scikit-learn" in specs and "numba" in specs
     ok, why = deps._importable("os")

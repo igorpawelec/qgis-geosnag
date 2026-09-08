@@ -81,6 +81,7 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
 
     def prepareAlgorithm(self, parameters, context, feedback):
         warm_jit(feedback)
+        styling.register_output_styles(feedback)     # QGIS styles the outputs itself (Postprocessing.py)
         return True
 
     def processAlgorithm(self, parameters, context, feedback):
