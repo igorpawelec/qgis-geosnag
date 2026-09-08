@@ -89,7 +89,7 @@ def check_session_packages(feedback):
             continue
         origin = os.path.abspath(getattr(mod, "__file__", "") or "")
         ver = str(getattr(mod, "__version__", "?"))
-        where = "bundled" if origin.startswith(root) else "installed"
+        where = "bundled" if origin.startswith(root) else f"installed, {os.path.dirname(origin)}"
         lines.append(f"{name} {ver} ({where})")
         if where == "bundled" and bundled.get(name) and bundled[name] != ver:
             stale.append(f"{name} {ver} in memory, {bundled[name]} in the plugin folder")
