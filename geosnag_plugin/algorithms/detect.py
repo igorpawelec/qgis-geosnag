@@ -79,13 +79,13 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
     def shortHelpString(self):
         return (
             "<p><b>One point per standing dead tree, from the orthophoto alone.</b> The image is "
-            "split into adaptels (small segments that follow the crowns), each segment is described "
+            "split into adaptels (superpixels that follow the crowns), each adaptel is described "
             "by its colour, its contrast to the surroundings and its texture, and a random forest "
-            "trained on verified dead trees scores it. Segments above the threshold are merged "
+            "trained on verified dead trees scores it. Adaptels above the threshold are merged "
             "into objects; each object becomes one point with a confidence <code>p</code>. No tree "
             "tops, no height model and no training are needed.</p>"
             "<p><b>What you get.</b> A point layer <i>Dead trees</i> with <code>p</code> (confidence "
-            "of the best segment), <code>p_mean</code>, <code>p_object</code> (RGB+NIR only, see "
+            "of the best adaptel), <code>p_mean</code>, <code>p_object</code> (RGB+NIR only, see "
             "below), <code>area_m2</code> (the object), <code>n_adaptels</code>, "
             "<code>height_m</code> and <code>in_stands</code> when a height model or stands were "
             "given, and <code>edge_px</code> (distance to the raster edge). The points are the "
@@ -135,7 +135,7 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(hp(QgsProcessingParameterNumber(
             self.THRESHOLD, "Probability threshold (0 = the model's own: 0.7, RGB 0.6)",
             QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0, maxValue=0.95),
-            "A segment is a dead-tree candidate when its confidence reaches this value. Lower = more trees "
+            "An adaptel is a dead-tree candidate when its confidence reaches this value. Lower = more trees "
             "found and more false points; higher = fewer, cleaner points. 0 takes the value the model of the "
             "band mode was calibrated with. On unfamiliar imagery start lower (0.5) and look at the map."))
         self.addParameter(hp(QgsProcessingParameterVectorLayer(

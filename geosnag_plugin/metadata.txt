@@ -4,19 +4,23 @@ qgisMinimumVersion=3.28
 qgisMaximumVersion=4.99
 supportsQt6=True
 description=Standing dead trees from aerial orthophotos: one point per tree, then the crown grown around each point.
-version=0.5.0
+version=0.5.1
 author=Igor Pawelec
 email=igor.pawelec@urk.edu.pl
-about=Finds standing dead trees on an aerial orthophoto (RGB+NIR, colour infrared or RGB, best at about 0.25 m) and writes one point per tree with a confidence; a second tool grows the crown polygon around each point. No tree tops, height model or training data are needed. The detector segments the image into adaptels, describes each segment by colour, contrast and texture and scores it with a random forest trained on thousands of verified dead trees in Polish pine and spruce stands (Pawelec et al. 2026, IJAEOG). The crowns are grown by seeded region growing on NDVI and lightness. Optional stand polygons and a canopy height model remove roads and bare ground. The models are downloaded on first use; the plugin installs its Python dependencies into its own folder.
+about=EN: Finds standing dead trees on an aerial orthophoto (RGB+NIR, colour infrared or RGB, best at about 0.25 m) and writes one point per tree with a confidence; a second tool grows the crown polygon around each point, from the detected points or from your own. No tree tops, height model or training data are needed. The detector splits the image into adaptels (superpixels), describes each by colour, contrast and texture and scores it with a random forest trained on thousands of verified dead trees in Polish pine and spruce stands (Pawelec et al. 2026). The crowns are grown by seeded region growing on NDVI and lightness. Optional stand polygons and a canopy height model remove roads and bare ground. The models are downloaded on first use; the plugin installs its Python dependencies into its own folder. PL: Znajduje stojace martwe drzewa na ortofotomapie lotniczej (RGB+NIR, CIR lub RGB, najlepiej ok. 0,25 m) i zapisuje po jednym punkcie na drzewo z ocena pewnosci; drugie narzedzie rozrasta korone wokol kazdego punktu, z wykrytych punktow lub z wlasnych. Nie wymaga wierzcholkow, modelu wysokosci ani danych treningowych. Detektor dzieli obraz na adaptele (superpiksele), opisuje kazdy barwa, kontrastem i tekstura i ocenia lasem losowym uczonym na tysiacach zweryfikowanych martwych drzew w polskich drzewostanach sosnowych i swierkowych (Pawelec i in. 2026). Korony rosna przez rozrost obszarow z ziaren na NDVI i jasnosci. Opcjonalne wydzielenia i model wysokosci koron usuwaja drogi i grunt. Modele pobierane sa przy pierwszym uzyciu; wtyczka instaluje swoje zaleznosci Pythona do wlasnego folderu.
 icon=icon.png
 homepage=https://github.com/igorpawelec/qgis-geosnag
 tracker=https://github.com/igorpawelec/qgis-geosnag/issues
 repository=https://github.com/igorpawelec/qgis-geosnag
 category=Analysis
-tags=raster,dead trees,snags,forestry,remote sensing,orthophoto,segmentation,random forest,region growing
+tags=raster,standing dead trees,snags,tree mortality,forestry,remote sensing,orthophoto,superpixels,delineation,random forest,region growing
 experimental=True
 deprecated=False
-changelog=0.5.0
+changelog=0.5.1
+    Wording after the author's review: adaptels are superpixels, not a
+    segmentation; the plugin description in English and Polish; own point
+    layers highlighted as input to Grow crowns. No change in the tools.
+    0.5.0
     A release for people: every option of both dialogs now says what
     changing it does, in its label and in its help text; the help pages
     explain the method, the outputs and what to expect; the README and a
@@ -96,7 +100,7 @@ changelog=0.5.0
     saved 27 and broke 17. Bundles pygeosnag 0.3.3.
     0.4.4
     Radiometry (Advanced, default auto): a hazy or flat orthophoto is mapped
-    per band onto the training range before segmentation; on such scenes
+    per band onto the training range before the adaptels are built; on such scenes
     the models saw nothing at all before. Bundles pygeosnag 0.3.2.
     0.4.3
     The dependency check no longer takes find_spec's word for it: it clears

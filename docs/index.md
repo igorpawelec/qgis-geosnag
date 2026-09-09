@@ -20,10 +20,10 @@ Left: a colour-infrared orthophoto (0.25 m, public GUGiK imagery) of a pine stan
 
 ### What happens inside
 
-1. **Adaptels.** The orthophoto is split into small segments that adapt their size to the local texture, so that a single crown is covered by a handful of segments following its outline, and a road or a field by a few large ones. This is the adaptel segmentation of Achanta et al. (2018), implemented in the author's [pygeoadaptels](https://github.com/igorpawelec/pygeoadaptels) package and evaluated for dead-tree delineation in Pawelec et al. (2026).
-2. **Features.** Each segment is described by its colour (CIELAB lightness and chroma, NDVI where an infrared band exists, the green-red and blue-red ratios), by its contrast to the canopy around it, and by its texture. The colour values are standardised within the scene first, which is what lets one model read flights with different colour balances.
-3. **Random forest.** A forest trained on thousands of verified dead trees scores every segment with a probability of being part of a dead crown. There is one forest per band mode (RGB+NIR, colour infrared, RGB).
-4. **Objects and points.** Segments above the threshold that touch each other are merged into one object, the object becomes one point (its centroid), and the point carries the confidence of the object's best segment. Two points closer than 3 m are taken as one tree.
+1. **Adaptels.** The orthophoto is split into superpixels that adapt their size to the local texture, so that a single crown is covered by a handful of adaptels following its outline, and a road or a field by a few large ones. This is a low-level, superpixel step, not a segmentation of the image into objects: the adaptels of Achanta et al. (2018), implemented in the author's [pygeoadaptels](https://github.com/igorpawelec/pygeoadaptels) package and evaluated for dead-tree delineation in Pawelec et al. (2026).
+2. **Features.** Each adaptel is described by its colour (CIELAB lightness and chroma, NDVI where an infrared band exists, the green-red and blue-red ratios), by its contrast to the canopy around it, and by its texture. The colour values are standardised within the scene first, which is what lets one model read flights with different colour balances.
+3. **Random forest.** A forest trained on thousands of verified dead trees scores every adaptel with a probability of being part of a dead crown. There is one forest per band mode (RGB+NIR, colour infrared, RGB).
+4. **Objects and points.** Adaptels above the threshold that touch each other are merged into one object, the object becomes one point (its centroid), and the point carries the confidence of the object's best segment. Two points closer than 3 m are taken as one tree.
 5. **Filters.** Optional: a canopy height model drops points with nothing taller than 3 m nearby; stand polygons drop points outside stands; on RGB+NIR imagery a second forest scores the whole object (`p_object`) and can be used as a stricter cut.
 
 ![What the model sees](img/what_the_model_sees.png)
@@ -36,7 +36,7 @@ A verified dead crown (dashed) and its neighbours, 40 × 40 m, in colour infrare
 |---|---|
 | **Orthophoto** | The image. Four bands are read as RGB+NIR, three as colour infrared or RGB. 0.10 to 0.50 m per pixel works; the models were trained at 0.25 m. |
 | **Band mode** | Which band holds what. *auto* samples the pixels and decides (four bands: RGB+NIR, or NIR first when the first band is the brightest; three bands: colour infrared when the second band is the darkest, because vegetation absorbs red, else RGB) and writes its choice in the first log line. Set it yourself when you know the order: a colour-infrared image read as RGB finds almost nothing. |
-| **Probability threshold** | A segment is a candidate when its confidence reaches this value. Lower: more trees and more false points. Higher: fewer, cleaner points. 0 uses the value each model was calibrated with: 0.7 for RGB+NIR and colour infrared, 0.6 for RGB. On unfamiliar imagery start at 0.5 and look at the map. |
+| **Probability threshold** | An adaptel is a candidate when its confidence reaches this value. Lower: more trees and more false points. Higher: fewer, cleaner points. 0 uses the value each model was calibrated with: 0.7 for RGB+NIR and colour infrared, 0.6 for RGB. On unfamiliar imagery start at 0.5 and look at the map. |
 | **Stand polygons** | Forest-management polygons. Only points inside stands at least 10 years old, shrunk by 2 m, are kept; roads, fields, clear-cuts and stand edges fall out. A field named `species_age` holds the age; without it every polygon counts. |
 | **Canopy height model** | A point with no pixel above 3 m within 3 m of it stands on the ground and is dropped; the height is written as `height_m`. Use a model from the same years as the imagery: a later one shows cleared stands where the dead trees stood. |
 | *Advanced:* Surface and terrain model | Together they replace the canopy height model (the gate uses their difference). |
@@ -67,7 +67,7 @@ A dense cluster of dead spruces with the verified crowns dashed. Left: the recip
 
 | Option | What changing it does |
 |---|---|
-| **Orthophoto, Dead trees** | The same orthophoto the points come from, and the points. Points from a click or a field survey work too, as long as they sit on the crown. |
+| **Orthophoto, Dead trees** | The same orthophoto the points come from, and the points. **Your own points work too**: a layer clicked in QGIS or surveyed in the field, as long as each point sits on its crown; the tool draws the crowns and you get their areas. |
 | *Advanced:* Band mode, band roles | As in *Detect dead trees*; they decide whether the crown can grow on NDVI. |
 | *Advanced:* Feature space | What "looks alike" means. *auto* picks NDVI + lightness with an infrared band and weighted CIELAB colour without. The other choices are for experiments; the tolerances below are per space. |
 | *Advanced:* Assignment rule | How neighbouring points share pixels. *reach*: a pixel goes to the nearest-looking point within the radius (fuller crowns in dense clusters). *partition*: one global partition first, cut afterwards (cannot grow into shadow between points; the better rule on RGB). *auto* pairs each space with the rule it was tuned with. |
@@ -84,10 +84,10 @@ A dense cluster of dead spruces with the verified crowns dashed. Left: the recip
 
 | Field | Meaning |
 |---|---|
-| `p` | Confidence of the best segment of the object, 0 to 1. The threshold applied to it. |
-| `p_mean` | Mean confidence over the object's segments. |
+| `p` | Confidence of the best adaptel of the object, 0 to 1. The threshold applied to it. |
+| `p_mean` | Mean confidence over the object's adaptels. |
 | `p_object` | Confidence of the whole object from the second forest (RGB+NIR only; empty otherwise). |
-| `area_m2`, `n_adaptels` | Size of the object and the number of segments in it. Very large objects are usually several trees or a bright patch of ground. |
+| `area_m2`, `n_adaptels` | Size of the object and the number of adaptels in it. Very large objects are usually several trees or a bright patch of ground. |
 | `height_m` | The maximum height of the height model within the gate radius (when a height model was given). |
 | `in_stands` | 1 inside the stand mask, 0 outside (when stands were given and points outside kept). |
 | `edge_px` | Distance to the raster edge in pixels; points at the very edge are less reliable. |

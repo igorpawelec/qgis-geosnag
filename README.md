@@ -23,21 +23,21 @@ The same idea is being pursued globally: [deadtrees.earth](https://deadtrees.ear
 
 ```mermaid
 flowchart LR
-    A[Orthophoto<br/>RGB+NIR, CIR or RGB] --> B[Adaptels<br/>small segments that follow the crowns]
-    B --> C[Features per segment<br/>colour, contrast to the surroundings, texture]
+    A[Orthophoto<br/>RGB+NIR, CIR or RGB] --> B[Adaptels<br/>superpixels that follow the crowns]
+    B --> C[Features per adaptel<br/>colour, contrast to the surroundings, texture]
     C --> D[Random forest<br/>trained on verified dead trees]
     D --> E[Points<br/>one per dead tree, with a confidence]
     E --> F[Grow crowns<br/>seeded region growing]
     F --> G[Crown polygons]
 ```
 
-**Detect dead trees.** The orthophoto is split into *adaptels*, superpixels that adapt their size to the local texture, so that a dead crown is covered by a few segments that follow its outline (Achanta et al., 2018; Pawelec et al., 2026). Each segment is described by its colour, by how it contrasts with the canopy around it and by its texture, and a random forest trained on thousands of verified dead trees scores it. Segments above the threshold are merged into objects, and each object becomes one point. The confidence of every point is written next to it, so the map can be tightened or loosened afterwards without running anything again.
+**Detect dead trees.** The orthophoto is split into *adaptels*, superpixels that adapt their size to the local texture, so that a dead crown is covered by a few adaptels that follow its outline; this is a superpixel step, not a segmentation of the image into objects (Achanta et al., 2018; Pawelec et al., 2026). Each adaptel is described by its colour, by how it contrasts with the canopy around it and by its texture, and a random forest trained on thousands of verified dead trees scores it. Adaptels above the threshold are merged into objects, and each object becomes one point. The confidence of every point is written next to it, so the map can be tightened or loosened afterwards without running anything again.
 
 ![What the model sees](docs/img/what_the_model_sees.png)
 
 *A verified dead crown (dashed) and its neighbours in colour infrared, and the same 40 × 40 m in NDVI, lightness and the red-green axis of CIELAB colour. A dead crown has lost its infrared reflectance and is brighter than the canopy; the detector reads both, and so does the crown growing.*
 
-**Grow crowns.** Each point grows into the pixels around it that still look like the pixel under the point, on NDVI and lightness when the orthophoto has an infrared band and on CIELAB colour when it has not, up to a spectral tolerance and a maximum radius, while neighbouring points compete for the pixels between them. Since version 0.5 the tolerance is generous next to the point and strict at the edge, and each pixel goes to the nearest-looking point within reach, which is what makes crowns in dense bark-beetle clusters come out whole instead of being cut in half by their neighbours.
+**Grow crowns.** The points do not have to come from the detector: a layer of your own points, clicked in QGIS or surveyed in the field, grows just as well, as long as each point sits on its crown. Each point grows into the pixels around it that still look like the pixel under the point, on NDVI and lightness when the orthophoto has an infrared band and on CIELAB colour when it has not, up to a spectral tolerance and a maximum radius, while neighbouring points compete for the pixels between them. Since version 0.5 the tolerance is generous next to the point and strict at the edge, and each pixel goes to the nearest-looking point within reach, which is what makes crowns in dense bark-beetle clusters come out whole instead of being cut in half by their neighbours.
 
 ![Dense cluster before and after 0.5](docs/img/dense_cluster.png)
 
@@ -48,7 +48,7 @@ flowchart LR
 1. Download `geosnag_plugin-<version>.zip` from the [releases page](https://github.com/igorpawelec/qgis-geosnag/releases) and install it in QGIS: *Plugins → Manage and Install Plugins → Install from ZIP*. QGIS 3.28 or newer, QGIS 4 included.
 2. The first run installs the scientific Python packages the plugin needs into its own folder and downloads the models (60–145 MB per band mode). Both happen once; a machine without internet can be given a local models folder under *Advanced*.
 3. *Processing Toolbox → GeoSnag → Detect dead trees*: choose the orthophoto, leave *Band mode* on auto (the log says what it read) and the threshold at 0, and run. Add stand polygons or a canopy height model if you have them; they remove roads, fields and bare ground from the result.
-4. *Grow crowns* with the same orthophoto and the points. The crowns come out styled, with their area in square metres.
+4. *Grow crowns* with the same orthophoto and the points. The crowns come out styled, with their area in square metres. Your own point layer works here too: mark the trees you know and let the tool draw their crowns.
 
 Every option in both dialogs has a help text that says what changing it does; the [documentation page](docs/index.md) goes through them one by one, explains the output fields and says what to do when the result is not what you expected.
 
