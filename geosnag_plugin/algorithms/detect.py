@@ -82,7 +82,7 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             "<p>One point per standing dead tree, from the orthophoto alone: adaptel "
             "micro-segmentation, twenty spectral and contextual features per adaptel, a "
             "random forest trained with whole-crown labels on ten Polish forest sites (the "
-            "pygeosnag models <code>assets-v2</code>), a probability threshold, adjacent "
+            "pygeosnag models <code>assets-v3</code>), a probability threshold, adjacent "
             "detections merged and their centroid taken as the point. The points are seeds for "
             "<i>Grow crowns</i>.</p>"
             "<p><b>Band mode.</b> Auto reads 4 bands as R, G, B, NIR (or NIR, R, G, B when the "
@@ -90,8 +90,9 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             "over a sample of the pixels (vegetation absorbs red), else as RGB; the first log line "
             "says which. Choose the mode yourself when you know it: a CIR orthophoto read as RGB "
             "finds almost nothing.</p>"
-            "<p><b>Threshold.</b> 0.7 is the models' operating point. On a scene never seen in "
-            "training (Bialowieza, 2018 flight) recall stays at 61% from 0.6 to 0.8 while "
+            "<p><b>Threshold.</b> 0 takes the operating point of the band mode from the models: "
+            "0.7 for RGB+NIR and CIR, 0.6 for RGB (its forest scores lower). On a scene never seen "
+            "in training (Bialowieza, 2018 flight) RGB+NIR recall stays at 61% from 0.6 to 0.8 while "
             "precision rises from 23% to 30%: lower it for completeness, raise it for a cleaner "
             "map. On imagery unlike the training sites (another camera, species or decay stage) "
             "the ranking is usually right and the scale is not: lower it.</p>"
@@ -131,8 +132,8 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT, "Orthophoto"))
         self.addParameter(QgsProcessingParameterEnum(self.MODE, "Band mode", options=MODES, defaultValue=0))
         self.addParameter(QgsProcessingParameterNumber(
-            self.THRESHOLD, "Probability threshold (0.7 = the models' operating point; lower for completeness or on an unfamiliar scene)",
-            QgsProcessingParameterNumber.Double, defaultValue=0.7, minValue=0.05, maxValue=0.95))
+            self.THRESHOLD, "Probability threshold (0 = the band mode's operating point: 0.7 RGB+NIR and CIR, 0.6 RGB; lower for completeness or on an unfamiliar scene)",
+            QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0, maxValue=0.95))
         self.addParameter(QgsProcessingParameterVectorLayer(
             self.STANDS, "Stand polygons (optional mask)", [QgsProcessing.TypeVectorPolygon], optional=True))
         self.addParameter(QgsProcessingParameterRasterLayer(
@@ -164,7 +165,7 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             self.SUPPRESS, "Drop the weaker of two points closer than (m)", QgsProcessingParameterNumber.Double,
             defaultValue=3.0, minValue=0.0)))
         self.addParameter(advanced(QgsProcessingParameterNumber(
-            self.OBJECT_THRESHOLD, "Drop RGB+NIR points with p_object below (0 = keep all; 0.4 halves the false points)",
+            self.OBJECT_THRESHOLD, "Drop points with p_object below (RGB+NIR and RGB models; 0 = keep all; RGB+NIR 0.4 halves the false points, RGB 0.3 lifts precision 16% -> 27% at two thirds of the recall)",
             QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0, maxValue=1.0)))
         self.addParameter(advanced(QgsProcessingParameterEnum(
             self.SCENE_NORM, "Scene normalisation of the spectral means", options=SCENE_NORM_OPTIONS, defaultValue=0)))
@@ -208,12 +209,12 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
         if not out.lower().endswith(".gpkg"):
             raise QgsProcessingException("The output must be a GeoPackage (.gpkg): pygeosnag writes it directly.")
         prob = self.parameterAsOutputLayer(parameters, self.PROB, context) or None
-        threshold = self.parameterAsDouble(parameters, self.THRESHOLD, context)
+        threshold = self.parameterAsDouble(parameters, self.THRESHOLD, context) or None   # None = the mode's operating point
         object_threshold = self.parameterAsDouble(parameters, self.OBJECT_THRESHOLD, context) or None
         scene_norm = SCENE_NORM_KEYS[self.parameterAsEnum(parameters, self.SCENE_NORM, context)]
         norm_tiles = self.parameterAsInt(parameters, self.NORM_TILES, context)
         radiometry = RADIOMETRY_KEYS[self.parameterAsEnum(parameters, self.RADIOMETRY, context)]
-        report_models(feedback, threshold)
+        report_models(feedback, threshold, mode)
         from pygeosnag.detect import detect
         try:
             n = detect(source_path(layer), out, mode=mode, bands=bands,

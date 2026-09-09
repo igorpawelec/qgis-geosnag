@@ -134,15 +134,23 @@ def set_assets_dir(path, feedback=None):
     return path
 
 
-def report_models(feedback, threshold):
-    """Which models a run will use and their operating point, with a note when
-    the chosen threshold differs from it (a local assets-v1 folder, say)."""
+def report_models(feedback, threshold, mode=None):
+    """Which models a run will use and their operating point (the band mode's own when
+    the manifest has one), with a note when the chosen threshold differs from it."""
     try:
         from pygeosnag import assets
         man = assets.manifest(quiet=True)
-        op = float(man.get("operating_point", {}).get("threshold", 0.5))
-        feedback.pushInfo(f"Models: {man.get('release', assets.RELEASE)} from {assets.assets_dir()}, operating point p >= {op:g}")
-        if abs(float(threshold) - op) > 1e-9:
+        opd = man.get("operating_point", {})
+        op = float(opd.get("threshold", 0.5))
+        per = opd.get("per_mode") or {}
+        if mode and mode in per:
+            op = float(per[mode])
+        feedback.pushInfo(f"Models: {man.get('release', assets.RELEASE)} from {assets.assets_dir()}, operating point p >= {op:g}"
+                          f"{' for mode ' + mode if mode and mode in per else ''}"
+                          f"{'' if mode else ' (band mode auto: the mode decides, see the first pygeosnag line)'}")
+        if threshold is None:
+            feedback.pushInfo("Threshold 0: the operating point of the band mode is used")
+        elif abs(float(threshold) - op) > 1e-9:
             feedback.pushInfo(f"Threshold {float(threshold):g} differs from the models' operating point {op:g}")
     except Exception as exc:                      # detect fetches the manifest again and reports properly
         feedback.pushInfo(f"Models: manifest not readable yet ({exc})")
@@ -153,7 +161,7 @@ def _release():
         from pygeosnag import assets
         return assets.RELEASE
     except Exception:
-        return "assets-v2"
+        return "assets-v3"
 
 
 def package_error(e):
