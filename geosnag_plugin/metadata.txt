@@ -4,7 +4,7 @@ qgisMinimumVersion=3.28
 qgisMaximumVersion=4.99
 supportsQt6=True
 description=Standing dead trees on aerial orthophotos: one point per tree, then crowns grown from the points.
-version=0.4.14
+version=0.4.15
 author=Igor Pawelec
 email=igor.pawelec@urk.edu.pl
 about=QGIS Processing provider for the pygeosnag Python package. "Detect dead trees" takes an RGB+NIR, CIR or RGB orthophoto and writes one point per standing dead tree with a confidence (adaptel micro-segmentation, a random forest trained with whole-crown labels on ten Polish forest sites, spectral means standardised within the scene, an optional stand mask, an optional cut on the object score). "Grow crowns" grows the points into crown polygons with seeded region growing on NDVI and lightness (a within-reach kernel, tolerance and radius from a benchmark on 1200 verified crowns). The algorithms stay in the packages; this plugin is glue. pygeosnag, pygeoadaptels and pygeopalette are bundled; numba, scipy, scikit-learn, joblib, rasterio, fiona and shapely are installed into the plugin's own libs folder on first run. The models are downloaded on first use from the pygeosnag GitHub release.
@@ -16,7 +16,13 @@ category=Analysis
 tags=raster,dead trees,snags,forestry,remote sensing,orthophoto,segmentation,random forest,region growing
 experimental=True
 deprecated=False
-changelog=0.4.14
+changelog=0.4.15
+    Models assets-v3 corrected (pygeosnag 0.5.1): the RGB forest is the
+    assets-v1 one again, whose precision on Bialowieza without NIR is twice
+    that of the v2 forest at the same recall (30% vs 16% at 60% recall);
+    there is no object forest for RGB after all, so the p_object cut is
+    RGB+NIR only. RGB operating point 0.6 unchanged. Bundles pygeosnag 0.5.1.
+    0.4.14
     Models assets-v3 (pygeosnag 0.5.0): an object forest for RGB orthophotos,
     so p_object is filled and the p_object cut works without a NIR band
     (on Bialowieza without NIR 0.3 lifts precision from 16% to 27% at two

@@ -165,7 +165,7 @@ class DetectDeadTreesAlgorithm(QgsProcessingAlgorithm):
             self.SUPPRESS, "Drop the weaker of two points closer than (m)", QgsProcessingParameterNumber.Double,
             defaultValue=3.0, minValue=0.0)))
         self.addParameter(advanced(QgsProcessingParameterNumber(
-            self.OBJECT_THRESHOLD, "Drop points with p_object below (RGB+NIR and RGB models; 0 = keep all; RGB+NIR 0.4 halves the false points, RGB 0.3 lifts precision 16% -> 27% at two thirds of the recall)",
+            self.OBJECT_THRESHOLD, "Drop RGB+NIR points with p_object below (0 = keep all; 0.4 halves the false points; no object forest for CIR or RGB)",
             QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0, maxValue=1.0)))
         self.addParameter(advanced(QgsProcessingParameterEnum(
             self.SCENE_NORM, "Scene normalisation of the spectral means", options=SCENE_NORM_OPTIONS, defaultValue=0)))
