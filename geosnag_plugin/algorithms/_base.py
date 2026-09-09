@@ -7,16 +7,25 @@ from qgis.core import QgsProcessingException
 from ..deps import ensure_dependencies, manual_hint
 
 _WARMED = False
-MODES = ["auto (4 bands = RGB+NIR; 3 bands = CIR when band 2 is the darkest, else RGB; see the log)",
-         "rgbn (R, G, B, NIR)", "cir (NIR, R, G)", "rgb (R, G, B)"]
+MODES = ["auto: read the band order from the pixels (4 bands = RGB+NIR, 3 bands = CIR or RGB; the log says which)",
+         "rgbn: the bands are R, G, B, NIR",
+         "cir: the bands are NIR, R, G (colour infrared)",
+         "rgb: the bands are R, G, B, no infrared"]
 MODE_KEYS = [None, "rgbn", "cir", "rgb"]
-SCENE_NORM_OPTIONS = ["auto (as the models were trained; the manifest decides)",
-                      "off (only for a model trained without it)"]
+SCENE_NORM_OPTIONS = ["auto: normalise as the model was trained (recommended)",
+                      "off: raw spectral values (only for a model trained without normalisation)"]
 SCENE_NORM_KEYS = ["auto", "off"]
-RADIOMETRY_OPTIONS = ["off (default; run this first)",
-                      "auto (rescue: a hazy or flat scene is mapped onto the training range)",
-                      "match (always map the per-band 2-98 percentiles onto the training range)"]
+RADIOMETRY_OPTIONS = ["off: the orthophoto as it is (run this first)",
+                      "auto: stretch a hazy or flat scene onto the range the model knows, only when it is one",
+                      "match: always stretch every band onto that range"]
 RADIOMETRY_KEYS = ["off", "auto", "match"]
+
+
+def hp(param, text):
+    """Attach a per-parameter help text (the tooltip / help panel of the dialog, QGIS >= 3.16)."""
+    if hasattr(param, "setHelp"):
+        param.setHelp(text)
+    return param
 
 
 def warm_jit(feedback=None):

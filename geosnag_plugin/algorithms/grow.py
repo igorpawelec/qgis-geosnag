@@ -1,5 +1,5 @@
-"""Grow crowns -- wraps pygeosnag.grow_crowns (seeded region growing with the
-crown recipe: since pygeosnag 0.4.0 the within-reach kernel on NDVI + L)."""
+"""Grow crowns -- wraps pygeosnag.grow_crowns: each dead-tree point grows into
+its crown polygon (seeded region growing with the crown recipe)."""
 from qgis.core import (
     QgsProcessing,
     QgsProcessingAlgorithm,
@@ -15,17 +15,17 @@ from qgis.core import (
 )
 
 from .. import styling
-from ._base import progress_adapter, MODE_KEYS, MODES, advanced, package_error, require_packages, source_path, warm_jit
+from ._base import progress_adapter, MODE_KEYS, MODES, advanced, hp, package_error, require_packages, source_path, warm_jit
 
-SPACES = ["auto (NDVI + lightness with a NIR band, else weighted CIELAB)",
-          "ndvi_L (100 x NDVI and CIELAB L; needs a NIR band; tolerance 28 at the seed, 12 at the radius)",
-          "lab_w (CIELAB with a* weighted 2.5, the recipe before 0.4.9; tolerance 15)",
-          "lab (CIELAB, equal weights; tolerance 20)",
-          "raw (the bands as they are; tolerance 35, not benchmarked)"]
+SPACES = ["auto: NDVI + lightness when the raster has an infrared band, CIELAB colour when it has not",
+          "ndvi_L: NDVI and lightness (needs the infrared band)",
+          "lab_w: CIELAB colour with the red-green axis weighted (the RGB recipe)",
+          "lab: CIELAB colour, all axes equal",
+          "raw: the band values as they are"]
 SPACE_KEYS = ["auto", "ndvi_L", "lab_w", "lab", "raw"]
-RULES = ["auto (reach on NDVI + lightness, partition on CIELAB and raw: the pairing each was benchmarked in)",
-         "reach (a pixel goes to the seed within the radius and tolerance with the lowest path cost)",
-         "partition (one global partition with every seed, cut afterwards; the behaviour before 0.4.9)"]
+RULES = ["auto: the rule each feature space was tuned with (recommended)",
+         "reach: a pixel goes to the nearest-looking point within the radius",
+         "partition: one global partition of the image between all points, then cut by tolerance and radius"]
 RULE_KEYS = ["auto", "reach", "partition"]
 
 
@@ -62,51 +62,83 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
 
     def shortHelpString(self):
         return (
-            "<p>Grow the dead-tree points into crown polygons: every point grows into the "
-            "pixels within a radius that stay within a spectral tolerance of the pixel it sits "
-            "on, competing with the other points (pygeosnag's within-reach seeded region "
-            "growing, inverse OBIA).</p>"
-            "<p>The default recipe (pygeosnag 0.4.1) grows on 100 x NDVI and CIELAB lightness "
-            "with a tolerance of 28 at the seed falling to 12 at the radius, at most 20 px "
-            "(5 m at 0.25 m) from the seed, holes inside a crown filled; a raster without a "
-            "NIR band falls back to CIELAB with a* weighted 2.5, a flat tolerance of 15 and the "
-            "global partition rule, i.e. exactly the recipe before 0.4.9. Benchmarked on 1200 verified crowns of 8 Polish sites with "
-            "the detector's own points as competitors: median IoU 0.70, 79% of the crowns above "
-            "0.5, against 0.53 and 54% for the previous recipe; on dense bark-beetle clusters "
-            "(Gizycko, 2000 crowns) 0.56 against 0.34. Points can also come from anywhere else "
-            "&mdash; a click, a field survey &mdash; as long as they sit on the crown.</p>"
-            "<p>Under Advanced: the feature space and the assignment rule; a tolerance of 0 and "
-            "empty weights mean the values the chosen space was benchmarked at. For very dense "
-            "clusters a higher tolerance at the seed (32) grows fuller crowns at the price of "
-            "some spill in sparse stands.</p>")
+            "<p><b>Each dead-tree point grows into its crown polygon.</b> Starting at the pixel "
+            "under the point, the crown takes in the neighbouring pixels that still look like that "
+            "pixel, up to a spectral tolerance and a maximum radius, while neighbouring points "
+            "compete for the pixels between them (seeded region growing). Holes inside a crown are "
+            "filled. The points can come from <i>Detect dead trees</i>, from a click or from a "
+            "field survey, as long as they sit on the crown.</p>"
+            "<p><b>What 'looks alike' means.</b> With an infrared band the crown grows on NDVI and "
+            "lightness: a dead crown has lost its infrared reflectance and is usually brighter than "
+            "the canopy, so both separate it from the living neighbours and from shadow. Without "
+            "infrared it grows on CIELAB colour with the red-green axis weighted, which is what "
+            "separates a grey-white crown from green canopy in plain RGB.</p>"
+            "<p><b>What you get.</b> A polygon layer <i>Crowns</i>, one (multi)polygon per point, "
+            "with <code>adaptel_id</code> (the index of the point), <code>area_m2</code>, "
+            "<code>perimeter</code> and <code>n_parts</code>. Optionally a label raster with the "
+            "point index in every crown pixel.</p>"
+            "<p><b>How good is it.</b> On 1 200 verified crowns of eight Polish sites, with the "
+            "detector's own points as neighbours, the grown crowns overlap the verified ones with a "
+            "median IoU of 0.70 (eight in ten above 0.5) on infrared imagery and 0.52 on RGB; the "
+            "crowns tend to be a little smaller than the verified outlines, because thin, shaded "
+            "branches at the edge fall outside the tolerance.</p>"
+            "<p><b>Advanced.</b> The feature space and the assignment rule, the tolerance at the "
+            "seed and at the radius, the radius, the band weights and hole filling. The defaults are "
+            "the values the recipe was tuned with; 0 or an empty field means 'use them'. Every "
+            "option explains itself in its help text.</p>")
 
     def initAlgorithm(self, config=None):
-        self.addParameter(QgsProcessingParameterRasterLayer(self.INPUT, "Orthophoto"))
-        self.addParameter(QgsProcessingParameterVectorLayer(
-            self.POINTS, "Dead trees (points)", [QgsProcessing.TypeVectorPoint]))
-        self.addParameter(advanced(QgsProcessingParameterEnum(self.MODE, "Band mode", options=MODES, defaultValue=0)))
-        self.addParameter(advanced(QgsProcessingParameterString(
-            self.BANDS, "Band roles in raster order (empty = default order)", defaultValue="", optional=True)))
-        self.addParameter(advanced(QgsProcessingParameterEnum(self.SPACE, "Feature space", options=SPACES, defaultValue=0)))
-        self.addParameter(advanced(QgsProcessingParameterEnum(self.RULE, "Assignment rule", options=RULES, defaultValue=0)))
-        self.addParameter(advanced(QgsProcessingParameterNumber(
-            self.MAX_COST, "Spectral tolerance at the seed (0 = the value of the chosen space)",
-            QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0)))
-        self.addParameter(advanced(QgsProcessingParameterNumber(
-            self.MAX_COST_R, "Spectral tolerance at the radius (0 = the seed tolerance minus the taper of the space; ndvi_L 12)",
-            QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0)))
-        self.addParameter(advanced(QgsProcessingParameterNumber(
-            self.MAX_RADIUS, "Maximum radius from the seed (px)", QgsProcessingParameterNumber.Integer,
-            defaultValue=20, minValue=2)))
-        self.addParameter(advanced(QgsProcessingParameterString(
-            self.WEIGHTS, "Band weights, one per feature (empty = the weights of the chosen space)",
-            defaultValue="", optional=True)))
-        self.addParameter(advanced(QgsProcessingParameterBoolean(
-            self.FILL_HOLES, "Fill holes inside crowns", defaultValue=True)))
-        self.addParameter(QgsProcessingParameterVectorDestination(
-            self.OUTPUT, "Crowns", type=QgsProcessing.TypeVectorPolygon))
-        self.addParameter(QgsProcessingParameterRasterDestination(
-            self.LABELS, "Label raster", optional=True, createByDefault=False))
+        self.addParameter(hp(QgsProcessingParameterRasterLayer(self.INPUT, "Orthophoto (the one the points were detected on)"),
+                             "The same orthophoto the points come from. Any band order the band mode understands."))
+        self.addParameter(hp(QgsProcessingParameterVectorLayer(
+            self.POINTS, "Dead trees (points)", [QgsProcessing.TypeVectorPoint]),
+            "One point per tree, on the crown. From Detect dead trees, a click or a field survey."))
+        self.addParameter(advanced(hp(QgsProcessingParameterEnum(self.MODE, "Band mode", options=MODES, defaultValue=0),
+                                      "Which band holds what; auto reads it from the pixels and writes its choice in the log. "
+                                      "It decides whether the crown can grow on NDVI (needs the infrared band).")))
+        self.addParameter(advanced(hp(QgsProcessingParameterString(
+            self.BANDS, "Band roles in raster order, e.g. nir,red,green,blue (overrides the band mode)", defaultValue="", optional=True),
+            "For an unusual band order: comma-separated roles (red, green, blue, nir) in the order of the bands.")))
+        self.addParameter(advanced(hp(QgsProcessingParameterEnum(self.SPACE, "Feature space: what 'looks alike' means", options=SPACES, defaultValue=0),
+                                      "The values a pixel is compared on. auto picks NDVI + lightness with an infrared band and "
+                                      "weighted CIELAB colour without; the tolerances below are per space, so change the space "
+                                      "first and the tolerance after.")))
+        self.addParameter(advanced(hp(QgsProcessingParameterEnum(self.RULE, "Assignment rule: how neighbouring points share pixels", options=RULES, defaultValue=0),
+                                      "reach: every pixel within the radius and tolerance of a point goes to the point it looks "
+                                      "most like along the way; fuller crowns in dense clusters. partition: the whole image is "
+                                      "split between all points first and cut afterwards; cannot grow into shadow between "
+                                      "points, better on RGB. auto pairs each feature space with the rule it was tuned with.")))
+        self.addParameter(advanced(hp(QgsProcessingParameterNumber(
+            self.MAX_COST, "Tolerance at the seed (0 = the space's own)",
+            QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0),
+            "How different from the seed pixel a pixel may be and still join the crown. Larger = fuller "
+            "crowns that may spill into shadow or ground; smaller = tighter crowns with holes at the edges. "
+            "Per space: NDVI + lightness 28 (units of 100 x NDVI and L), CIELAB 15 (colour difference).")))
+        self.addParameter(advanced(hp(QgsProcessingParameterNumber(
+            self.MAX_COST_R, "Tolerance at the radius (0 = the space's own; NDVI + lightness 12)",
+            QgsProcessingParameterNumber.Double, defaultValue=0.0, minValue=0.0),
+            "The tolerance falls from the seed value to this at the maximum radius, so a crown is generous "
+            "near its point and strict at its edge. Lowering it stops the spill into shadow at the edges; "
+            "raising it grows fuller edges. For CIELAB the tolerance is flat (this equals the seed value).")))
+        self.addParameter(advanced(hp(QgsProcessingParameterNumber(
+            self.MAX_RADIUS, "Maximum crown radius (px): 20 = 5 m at 0.25 m", QgsProcessingParameterNumber.Integer,
+            defaultValue=20, minValue=2),
+            "No crown reaches farther than this from its point. Raise it for large old crowns or a finer "
+            "pixel, lower it for young stands or a coarser pixel.")))
+        self.addParameter(advanced(hp(QgsProcessingParameterString(
+            self.WEIGHTS, "Band weights, one per feature (empty = the space's own)", defaultValue="", optional=True),
+            "How much each feature counts in the difference: for CIELAB three numbers (L, a, b; the recipe "
+            "is 0.5, 2.5, 1.0), for NDVI + lightness two (1, 1).")))
+        self.addParameter(advanced(hp(QgsProcessingParameterBoolean(
+            self.FILL_HOLES, "Fill holes inside crowns", defaultValue=True),
+            "Checked: pixels enclosed by a crown (a shaded branch, a bright spot) are added to it. Unchecked: "
+            "crowns keep their holes.")))
+        self.addParameter(hp(QgsProcessingParameterVectorDestination(
+            self.OUTPUT, "Crowns", type=QgsProcessing.TypeVectorPolygon),
+            "The crowns, one (multi)polygon per point, as a GeoPackage (.gpkg)."))
+        self.addParameter(hp(QgsProcessingParameterRasterDestination(
+            self.LABELS, "Label raster (optional)", optional=True, createByDefault=False),
+            "A raster with the point index in every crown pixel and -1 elsewhere, for raster-based follow-ups."))
 
     def prepareAlgorithm(self, parameters, context, feedback):
         warm_jit(feedback)
@@ -147,7 +179,7 @@ class GrowCrownsAlgorithm(QgsProcessingAlgorithm):
             except ValueError:
                 raise QgsProcessingException(
                     "Band weights must be numbers separated by commas, one per feature "
-                    "(e.g. 0.5,2.5,1.0 for CIELAB, 1,1 for NDVI + L), or empty for the space's own weights")
+                    "(e.g. 0.5,2.5,1.0 for CIELAB, 1,1 for NDVI + lightness), or empty for the space's own weights")
         radius = self.parameterAsInt(parameters, self.MAX_RADIUS, context)
         out = self.parameterAsOutputLayer(parameters, self.OUTPUT, context)
         if not out.lower().endswith(".gpkg"):
