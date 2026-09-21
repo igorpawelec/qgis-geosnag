@@ -2,6 +2,7 @@
 
 <img src="https://raw.githubusercontent.com/igorpawelec/qgis-geosnag/main/geosnag_plugin/icon.png" align="right" width="96"/>
 
+[![tests](https://github.com/igorpawelec/qgis-geosnag/actions/workflows/tests.yml/badge.svg)](https://github.com/igorpawelec/qgis-geosnag/actions/workflows/tests.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/igorpawelec/qgis-geosnag)](https://github.com/igorpawelec/qgis-geosnag/releases)
 
