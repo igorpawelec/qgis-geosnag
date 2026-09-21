@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+title: "GeoSnag — QGIS Processing provider for standing dead tree detection on aerial orthophotos"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Pawelec
+    given-names: Igor
+    affiliation: "University of Agriculture in Kraków, Poland"
+    email: igor.pawelec@urk.edu.pl
+    orcid: "https://orcid.org/0009-0005-9798-3596"
+repository-code: "https://github.com/igorpawelec/qgis-geosnag"
+license: GPL-3.0-or-later
+version: "0.5.1"
+date-released: "2026-09-08"
+keywords:
+  - QGIS
+  - plugin
+  - dead trees
+  - snags
+  - orthophoto
+  - forest health
+  - remote sensing
+references:
+  - type: software
+    title: "pygeosnag — standing dead tree detection on aerial orthophotos"
+    authors:
+      - family-names: Pawelec
+        given-names: Igor
+    repository-code: "https://github.com/igorpawelec/pygeosnag"
